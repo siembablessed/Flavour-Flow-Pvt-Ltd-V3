@@ -24,7 +24,7 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
   }, [searchQuery]);
 
   const links = [
-    { label: "Home", section: "products" },
+    { label: "About Us", section: "about" },
     { label: "Products", section: "products" },
     { label: "Delivery Location", section: "transport" },
     { label: "Contact", section: "contact" },
@@ -36,7 +36,7 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
     if (mobileOpen) setMobileOpen(false);
   };
 
-  const clearSearchAndHome = () => {
+  const clearSearchAndNavigate = () => {
     onSearch("");
     onNavigate("products");
   };
@@ -46,7 +46,7 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
       <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16">
         <div className="flex items-center justify-between h-16 sm:h-20 xl:h-24 2xl:h-28 gap-4">
           {/* Logo */}
-          <button onClick={clearSearchAndHome} className="flex-shrink-0 flex items-center -ml-2 group">
+          <button onClick={clearSearchAndNavigate} className="flex-shrink-0 flex items-center -ml-2 group">
             <img src={logo} alt="Flavour Flow" className="h-20 sm:h-24 xl:h-28 2xl:h-32 w-auto" />
           </button>
 
