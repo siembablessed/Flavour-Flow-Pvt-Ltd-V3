@@ -32,7 +32,12 @@ function createReference(): string {
 
 function createPaynowClient(returnUrl: string): Paynow {
   const env = getEnv();
-  return new Paynow(env.PAYNOW_INTEGRATION_ID, env.PAYNOW_INTEGRATION_KEY, env.PAYNOW_RESULT_URL, returnUrl);
+  return new Paynow(
+    String(env.PAYNOW_INTEGRATION_ID),
+    env.PAYNOW_INTEGRATION_KEY,
+    env.PAYNOW_RESULT_URL,
+    returnUrl
+  );
 }
 
 async function safeMarkPaymentFailed(reference: string, reason: string): Promise<void> {
@@ -123,13 +128,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const returnSeparator = env.PAYNOW_RETURN_URL.includes("?") ? "&" : "?";
       const returnUrl = `${env.PAYNOW_RETURN_URL}${returnSeparator}reference=${encodeURIComponent(reference)}`;
       console.log("[Paynow Initiate] Creating Paynow client with returnUrl:", returnUrl);
-      
+
       const paynow = createPaynowClient(returnUrl);
       console.log("[Paynow Initiate] Paynow client created successfully");
 
       const payment = paynow.createPayment(reference, payerEmail);
       console.log("[Paynow Initiate] Payment created with reference:", reference, ", amount:", Math.round(totals.amount * 100));
-      
+
       payment.add(totals.description, Math.round(totals.amount * 100));
       if (phone) {
         payment.info = `Mobile ${phone}`;
@@ -138,6 +143,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       console.log("[Paynow Initiate] Sending payment to Paynow...");
       const response = await paynow.send(payment);
       console.log("[Paynow Initiate] Paynow response:", JSON.stringify(response));
+
       if (!response?.success || !response.pollUrl || !response.redirectUrl) {
         console.error("[Paynow Initiate] Paynow initialization failed. Response:", response);
         await safeMarkPaymentFailed(reference, "initiate_failed");
@@ -174,7 +180,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         amount: totals.amount,
       });
     } catch (error) {
-      console.error("Paynow initiate error:", error);
+      console.error("[Paynow Initiate] Paynow request error:", error);
       await safeMarkPaymentFailed(reference, "paynow_request_failed");
       const message = error instanceof Error ? error.message : "Paynow request failed";
       res.status(502).json({ error: message });
