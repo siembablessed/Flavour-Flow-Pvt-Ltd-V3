@@ -70,3 +70,5 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.status(502).json({ error: "Unable to poll Paynow transaction" });
   }
 }
+
+

@@ -1,11 +1,11 @@
-import type { ApiRequest, ApiResponse } from "../../../_lib/httpTypes";
+import type { ApiRequest, ApiResponse } from "../../_lib/httpTypes";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { Paynow } from "paynow";
-import { calculateCheckoutTotals } from "../../../_lib/catalog";
-import { getEnv } from "../../../_lib/env";
-import { serializeStateCookie } from "../../../_lib/state";
-import { createOrderWithPayment, markPaymentDispatched, markPaymentFailed } from "../../../_lib/orders";
+import { calculateCheckoutTotals } from "../../_lib/catalog";
+import { getEnv } from "../../_lib/env";
+import { serializeStateCookie } from "../../_lib/state";
+import { createOrderWithPayment, markPaymentDispatched, markPaymentFailed } from "../../_lib/orders";
 
 const initiateSchema = z.object({
   email: z.string().email().optional(),
@@ -136,3 +136,4 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.status(502).json({ error: "Paynow request failed" });
   }
 }
+

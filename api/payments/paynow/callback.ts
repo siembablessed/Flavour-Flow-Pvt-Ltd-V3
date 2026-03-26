@@ -1,7 +1,7 @@
-import type { ApiRequest, ApiResponse } from "../../../_lib/httpTypes";
+import type { ApiRequest, ApiResponse } from "../../_lib/httpTypes";
 import { Paynow } from "paynow";
-import { getEnv } from "../../../_lib/env";
-import { syncPaymentStatus } from "../../../_lib/orders";
+import { getEnv } from "../../_lib/env";
+import { syncPaymentStatus } from "../../_lib/orders";
 
 async function readRawBody(req: ApiRequest): Promise<string> {
   const chunks: Buffer[] = [];
@@ -57,3 +57,4 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.status(401).json({ error: "Invalid callback signature" });
   }
 }
+
