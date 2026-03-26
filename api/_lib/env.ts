@@ -6,6 +6,8 @@ const envSchema = z.object({
   PAYNOW_RESULT_URL: z.string().url(),
   PAYNOW_RETURN_URL: z.string().url(),
   PAYNOW_COOKIE_SECRET: z.string().min(16),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 });
 
 let cached: z.infer<typeof envSchema> | null = null;

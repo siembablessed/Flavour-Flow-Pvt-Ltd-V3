@@ -127,7 +127,7 @@ app.post("/api/payments/paynow/initiate", checkoutLimiter, async (req, res) => {
 
   let totals;
   try {
-    totals = calculateCheckoutTotals(items);
+    totals = await calculateCheckoutTotals(items);
   } catch {
     res.status(400).json({ error: "Invalid cart items" });
     return;
@@ -265,3 +265,4 @@ process.on("SIGINT", () => {
   clearInterval(cleanupTimer);
   server.close(() => process.exit(0));
 });
+

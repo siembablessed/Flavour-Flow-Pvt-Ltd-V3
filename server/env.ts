@@ -9,6 +9,8 @@ const envSchema = z.object({
   PAYNOW_RETURN_URL: z.string().url(),
   FRONTEND_URL: z.string().url(),
   PAYNOW_ALLOWED_ORIGINS: z.string().optional(),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 });
 
 const parsed = envSchema.safeParse(process.env);

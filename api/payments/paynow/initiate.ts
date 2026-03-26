@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let totals;
   try {
-    totals = calculateCheckoutTotals(items);
+    totals = await calculateCheckoutTotals(items);
   } catch {
     res.status(400).json({ error: "Invalid cart items" });
     return;
@@ -107,3 +107,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(502).json({ error: "Paynow request failed" });
   }
 }
+

@@ -22,7 +22,7 @@ Premium spirits wholesale platform for retail and hospitality buyers.
 ## Paynow Security Model
 
 - Paynow integration keys are used only on the backend (`server/index.ts`).
-- Cart totals are recalculated on the server from product IDs and quantities.
+- Cart totals are recalculated on the server from product IDs and quantities using database prices (`products.case_price`).
 - Callback validation verifies Paynow request hash before accepting status updates.
 - Rate limiting, Helmet headers, strict CORS allowlist, and request validation are enabled.
 
@@ -71,6 +71,8 @@ Required Vercel environment variables:
 - `PAYNOW_RESULT_URL` (example: `https://www.flavourflows.com/api/payments/paynow/callback`)
 - `PAYNOW_RETURN_URL` (example: `https://www.flavourflows.com/payment/complete`)
 - `PAYNOW_COOKIE_SECRET`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side only; never expose in frontend)
 
 ## Database (Catalog + Inventory)
 
