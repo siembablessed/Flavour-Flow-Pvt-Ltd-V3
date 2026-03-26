@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { products as staticProducts, type Product } from "@/data/products";
+import type { Product } from "@/data/products";
 import { supabase } from "@/lib/supabase";
 
 interface CatalogRow {
@@ -14,18 +14,7 @@ interface CatalogRow {
   is_active: boolean;
 }
 
-function hasConfiguredSupabase(): boolean {
-  const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-  return Boolean(url && key && !url.includes("placeholder") && !key.includes("placeholder"));
-}
-
 async function loadCatalog(): Promise<Product[]> {
-  if (!hasConfiguredSupabase()) {
-    return staticProducts;
-  }
-
   const { data, error } = await supabase
     .from("v_catalog")
     .select("product_id, category, name, pack, code, case_price, unit_price, unit_price_vat, is_active")
@@ -34,7 +23,7 @@ async function loadCatalog(): Promise<Product[]> {
     .order("name", { ascending: true });
 
   if (error || !data) {
-    return staticProducts;
+    throw new Error("Failed to fetch catalog from database");
   }
 
   return (data as CatalogRow[]).map((row) => ({
@@ -54,5 +43,6 @@ export function useCatalog() {
     queryKey: ["catalog"],
     queryFn: loadCatalog,
     staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
 }

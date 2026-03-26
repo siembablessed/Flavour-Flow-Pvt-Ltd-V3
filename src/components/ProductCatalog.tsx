@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Plus, SlidersHorizontal, Truck, Package, Shield, Star } from "lucide-react";
-import { products as staticProducts, Product } from "@/data/products";
+import { Product } from "@/data/products";
 import { useCart } from "@/context/CartContext";
 import { toast } from "sonner";
 import { useCatalog } from "@/hooks/useCatalog";
@@ -68,7 +68,7 @@ interface ProductCatalogProps {
 const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
   const [activeCategory, setActiveCategory] = useState("All");
   const { addItem } = useCart();
-  const { data: products = staticProducts } = useCatalog();
+  const { data: products = [], isLoading, isError } = useCatalog();
   const sectionRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const categories = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
@@ -228,7 +228,19 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
           </div>
         </div>
 
-        {filtered.length === 0 && (
+        {isLoading && (
+          <div className="text-center py-16">
+            <p className="text-foreground/40">Loading catalog...</p>
+          </div>
+        )}
+
+        {isError && (
+          <div className="text-center py-16">
+            <p className="text-destructive">Unable to load catalog from database.</p>
+          </div>
+        )}
+
+        {!isLoading && !isError && filtered.length === 0 && (
           <div className="text-center py-16">
             <p className="text-foreground/40">No products match your search.</p>
           </div>
