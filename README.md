@@ -71,6 +71,8 @@ Required Vercel environment variables:
 - `PAYNOW_RESULT_URL` (example: `https://www.flavourflows.com/api/payments/paynow/callback`)
 - `PAYNOW_RETURN_URL` (example: `https://www.flavourflows.com/payment/complete`)
 - `PAYNOW_COOKIE_SECRET`
+- `FRONTEND_URL` (example: `https://www.flavourflows.com`)
+- `PAYNOW_ALLOWED_ORIGINS` (comma-separated allowed origins)
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-side only; never expose in frontend)
 

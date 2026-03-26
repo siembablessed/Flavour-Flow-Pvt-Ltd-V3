@@ -12,22 +12,35 @@ export function AuthDialog({ open, onOpenChange }: { open: boolean, onOpenChange
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      toast.error("Please provide a valid email.");
+      return;
+    }
+
+    if (password.length < 8) {
+      toast.error("Password must be at least 8 characters.");
+      return;
+    }
+
     setLoading(true);
     
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
         if (error) throw error;
         toast.success("Successfully logged in!");
         onOpenChange(false);
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({ email: normalizedEmail, password });
         if (error) throw error;
         toast.success("Registration successful! You may need to verify your email.");
         onOpenChange(false);
       }
-    } catch (error: any) {
-      toast.error(error.message || "An error occurred during authentication.");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "An error occurred during authentication.";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

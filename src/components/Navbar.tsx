@@ -1,8 +1,17 @@
 import { useState, useEffect } from "react";
-import { ShoppingCart, Menu, X, Search, LogOut } from "lucide-react";
+import { ShoppingCart, Menu, X, Search, LogOut, ChevronDown, Settings, UserCircle2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { AuthDialog } from "./AuthDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 
 interface NavbarProps {
@@ -40,6 +49,9 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
     onSearch("");
     onNavigate("products");
   };
+
+  const userLabel = user?.email?.split("@")[0] || "Profile";
+  const initials = userLabel.slice(0, 2).toUpperCase();
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm border-b border-gray-100">
@@ -86,13 +98,35 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
 
             <div className="flex items-center gap-2 sm:gap-4">
               {user ? (
-                <div className="hidden sm:flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-full px-4 py-1.5 ml-1">
-                  <span className="text-xs font-bold text-gray-900 truncate max-w-[120px]">{user.email?.split('@')[0]}</span>
-                  <div className="w-px h-4 bg-gray-300"></div>
-                  <button onClick={signOut} className="text-gray-500 hover:text-red-500 transition-colors" title="Sign Out">
-                    <LogOut className="w-4 h-4 font-bold" />
-                  </button>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="hidden sm:inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-gray-50 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:outline-none focus-visible:ring-0 active:scale-100"
+                      aria-label="Open profile menu"
+                    >
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1B3674] text-xs font-bold text-white">
+                        {initials}
+                      </span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => toast.info("Settings panel coming next.")}>
+                      <Settings className="mr-2 h-4 w-4" />
+                      Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        void signOut();
+                      }}
+                      className="text-red-600 focus:text-red-600"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Logout
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : (
                 <button 
                   onClick={() => setAuthOpen(true)}
@@ -170,10 +204,23 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
             </button>
             {user ? (
               <div className="mt-4 border-t border-gray-200 pt-4 px-4 pb-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 mb-3">
+                  <UserCircle2 className="h-5 w-5 text-[#1B3674]" />
                   <span className="text-sm font-bold text-gray-900 truncate">{user.email}</span>
-                  <button onClick={() => { signOut(); setMobileOpen(false); }} className="text-gray-500 hover:text-red-500 font-semibold text-sm flex items-center gap-1 transition-colors">
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      toast.info("Settings panel coming next.");
+                      setMobileOpen(false);
+                    }}
+                    className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    Settings
+                  </button>
+                  <button onClick={() => { void signOut(); setMobileOpen(false); }} className="text-gray-500 hover:text-red-500 font-semibold text-sm flex items-center gap-1 transition-colors">
                     <LogOut className="w-4 h-4" />
+                    Logout
                   </button>
                 </div>
               </div>

@@ -8,11 +8,16 @@ const envSchema = z.object({
   PAYNOW_COOKIE_SECRET: z.string().min(16),
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  FRONTEND_URL: z.string().url(),
+  PAYNOW_ALLOWED_ORIGINS: z.string().optional(),
+  ANON_CART_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(6),
 });
 
-let cached: z.infer<typeof envSchema> | null = null;
+type ApiEnv = z.infer<typeof envSchema> & { allowedOrigins: string[] };
 
-export function getEnv() {
+let cached: ApiEnv | null = null;
+
+export function getEnv(): ApiEnv {
   if (cached) {
     return cached;
   }
@@ -23,6 +28,14 @@ export function getEnv() {
     throw new Error(`Invalid API environment: ${issues}`);
   }
 
-  cached = parsed.data;
+  const configuredOrigins = parsed.data.PAYNOW_ALLOWED_ORIGINS
+    ? parsed.data.PAYNOW_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
+    : [parsed.data.FRONTEND_URL];
+
+  cached = {
+    ...parsed.data,
+    allowedOrigins: Array.from(new Set(configuredOrigins)),
+  };
+
   return cached;
 }

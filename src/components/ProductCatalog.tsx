@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, SlidersHorizontal, Truck, Package, Shield, Star } from "lucide-react";
+import { Plus, SlidersHorizontal, Truck, Package, Shield, Star, Heart } from "lucide-react";
 import { Product } from "@/data/products";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { useCatalog } from "@/hooks/useCatalog";
+import { useSavedCatalog } from "@/hooks/useSavedCatalog";
 
 // Dummy ads data
 const sidebarAds = [
@@ -67,8 +69,11 @@ interface ProductCatalogProps {
 
 const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
   const [activeCategory, setActiveCategory] = useState("All");
+  const [savedOnly, setSavedOnly] = useState(false);
   const { addItem } = useCart();
+  const { user } = useAuth();
   const { data: products = [], isLoading, isError } = useCatalog();
+  const { savedSet, saveCatalogItem, unsaveCatalogItem, isUpdating } = useSavedCatalog();
   const sectionRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const categories = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
@@ -85,12 +90,33 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
   const filtered = products.filter((p) => {
     const matchCat = activeCategory === "All" || p.category === activeCategory;
     const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
+    const matchSaved = !savedOnly || savedSet.has(p.id);
+    return matchCat && matchSearch && matchSaved;
   });
 
   const handleAdd = (product: Product) => {
     addItem(product);
     toast.success(`${product.name} added to cart`);
+  };
+
+  const toggleSave = async (product: Product) => {
+    if (!user) {
+      toast.error("Sign in to save products to your catalogue");
+      return;
+    }
+
+    try {
+      if (savedSet.has(product.id)) {
+        await unsaveCatalogItem(product.id);
+        toast.success("Removed from saved catalogue");
+      } else {
+        await saveCatalogItem(product.id);
+        toast.success("Saved to your catalogue");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not update saved catalogue";
+      toast.error(message);
+    }
   };
 
   return (
@@ -122,6 +148,18 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
                 {cat}
               </button>
             ))}
+            {user && (
+              <button
+                onClick={() => setSavedOnly((prev) => !prev)}
+                className={`px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-200 active:scale-95 ${
+                  savedOnly
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-card border border-border hover:border-primary/30 text-foreground"
+                }`}
+              >
+                Saved Only
+              </button>
+            )}
           </div>
         </div>
 
@@ -153,13 +191,27 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
                   </p>
                   <p className="text-[11px] text-foreground/40 tabular-nums">${product.unitPriceVat.toFixed(2)}/unit incl. VAT</p>
                 </div>
-                <button
-                  onClick={() => handleAdd(product)}
-                  className="p-2.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors active:scale-95 shadow-sm"
-                  aria-label={`Add ${product.name} to cart`}
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void toggleSave(product)}
+                    disabled={isUpdating}
+                    className={`p-2.5 rounded-lg border transition-colors active:scale-95 ${
+                      savedSet.has(product.id)
+                        ? "border-rose-200 bg-rose-50 text-rose-600"
+                        : "border-border text-foreground/50 hover:bg-muted"
+                    }`}
+                    aria-label={`Save ${product.name}`}
+                  >
+                    <Heart className={`w-4 h-4 ${savedSet.has(product.id) ? "fill-current" : ""}`} />
+                  </button>
+                  <button
+                    onClick={() => handleAdd(product)}
+                    className="p-2.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors active:scale-95 shadow-sm"
+                    aria-label={`Add ${product.name} to cart`}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

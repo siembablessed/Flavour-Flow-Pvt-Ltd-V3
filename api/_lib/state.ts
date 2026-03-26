@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 
-type PaynowState = {
+export type PaynowState = {
   reference: string;
   pollUrl: string;
   amount: number;
+  orderNumber?: string;
   exp: number;
 };
 

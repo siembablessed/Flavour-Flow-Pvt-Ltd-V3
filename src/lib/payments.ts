@@ -12,6 +12,7 @@ export interface InitiatePaynowRequest {
 
 export interface InitiatePaynowResponse {
   reference: string;
+  orderNumber: string;
   redirectUrl: string;
   pollUrl: string;
   amount: number;
@@ -19,6 +20,7 @@ export interface InitiatePaynowResponse {
 
 export interface PaynowStatusResponse {
   reference: string;
+  orderNumber: string | null;
   amount: number;
   status: string;
   paid: boolean;

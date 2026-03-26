@@ -9,6 +9,7 @@ const PaymentComplete = () => {
   const [loading, setLoading] = useState(true);
   const [paid, setPaid] = useState(false);
   const [status, setStatus] = useState<string>("Pending");
+  const [orderNumber, setOrderNumber] = useState<string>("");
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
@@ -27,6 +28,7 @@ const PaymentComplete = () => {
 
         setStatus(result.status || "Pending");
         setPaid(result.paid);
+        setOrderNumber(result.orderNumber ?? "");
 
         if (!result.paid && attempt < 5) {
           setTimeout(() => {
@@ -75,6 +77,7 @@ const PaymentComplete = () => {
               <p className="font-semibold">Payment successful</p>
             </div>
             <p className="mt-2 text-sm text-foreground/70">Reference: {reference}</p>
+            {orderNumber && <p className="mt-1 text-sm text-foreground/70">Order: {orderNumber}</p>}
           </div>
         ) : (
           <div className="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">

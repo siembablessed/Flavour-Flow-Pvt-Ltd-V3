@@ -1,65 +1,76 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { getEnv } from "./env";
+import { getAdminClient } from "./supabaseAdmin";
 
 export interface CartLineInput {
   id: string;
   quantity: number;
 }
 
-let adminClient: SupabaseClient | null = null;
-
-function getAdminClient(): SupabaseClient {
-  if (adminClient) {
-    return adminClient;
-  }
-
-  const env = getEnv();
-  adminClient = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-
-  return adminClient;
+export interface CheckoutPricedLine {
+  productId: string;
+  name: string;
+  pack: string;
+  casePrice: number;
+  quantity: number;
+  lineTotal: number;
 }
 
-export async function calculateCheckoutTotals(lines: CartLineInput[]) {
+export interface CheckoutTotals {
+  amount: number;
+  description: string;
+  lines: CheckoutPricedLine[];
+}
+
+export async function calculateCheckoutTotals(lines: CartLineInput[]): Promise<CheckoutTotals> {
   const client = getAdminClient();
   const uniqueIds = Array.from(new Set(lines.map((line) => line.id)));
 
   const { data, error } = await client
     .from("products")
-    .select("product_id, case_price, is_active")
+    .select("product_id, name, pack, case_price, is_active")
     .in("product_id", uniqueIds);
 
   if (error || !data) {
     throw new Error("Unable to load catalog prices");
   }
 
-  const priceMap = new Map<string, number>();
+  const productMap = new Map<string, { name: string; pack: string; casePrice: number }>();
   for (const row of data) {
     if (!row.is_active) {
       continue;
     }
 
-    priceMap.set(row.product_id, Number(row.case_price));
+    productMap.set(row.product_id, {
+      name: String(row.name),
+      pack: String(row.pack),
+      casePrice: Number(row.case_price),
+    });
   }
 
   let amount = 0;
+  const pricedLines: CheckoutPricedLine[] = [];
 
   for (const line of lines) {
-    const casePrice = priceMap.get(line.id);
-    if (typeof casePrice !== "number" || Number.isNaN(casePrice)) {
+    const product = productMap.get(line.id);
+    if (!product || Number.isNaN(product.casePrice)) {
       throw new Error(`Unknown or inactive product id: ${line.id}`);
     }
 
-    amount += casePrice * line.quantity;
+    const lineTotal = Number((product.casePrice * line.quantity).toFixed(2));
+    amount += lineTotal;
+
+    pricedLines.push({
+      productId: line.id,
+      name: product.name,
+      pack: product.pack,
+      casePrice: product.casePrice,
+      quantity: line.quantity,
+      lineTotal,
+    });
   }
 
   return {
     amount: Number(amount.toFixed(2)),
     description: `Wholesale order (${lines.length} item types)`,
+    lines: pricedLines,
   };
 }

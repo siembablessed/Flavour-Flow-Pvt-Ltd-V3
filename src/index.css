@@ -124,3 +124,29 @@
 .stagger-2 { animation-delay: 0.18s; }
 .stagger-3 { animation-delay: 0.3s; }
 .stagger-4 { animation-delay: 0.42s; }
+
+/* Minimal, low-contrast scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(220 10% 70% / 0.45) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: hsl(220 10% 70% / 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 12% 62% / 0.55);
+}
