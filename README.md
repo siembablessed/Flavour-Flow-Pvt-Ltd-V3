@@ -16,7 +16,8 @@ Premium spirits wholesale platform for retail and hospitality buyers.
 - Vite
 - Tailwind CSS
 - Shadcn UI
-- Express (secure Paynow API)
+- Express (local Paynow API)
+- Vercel Serverless Functions (`/api/*`) for production
 
 ## Paynow Security Model
 
@@ -29,7 +30,8 @@ Premium spirits wholesale platform for retail and hospitality buyers.
 
 1. Copy `.env.example` to `.env` and fill in Paynow credentials/URLs.
 2. Use a publicly reachable `PAYNOW_RESULT_URL` so Paynow can call your callback endpoint.
-3. Keep `PAYNOW_INTEGRATION_KEY` secret and never expose it in frontend code.
+3. Set a strong `PAYNOW_COOKIE_SECRET` (at least 16 chars) for signed payment state cookies.
+4. Keep `PAYNOW_INTEGRATION_KEY` secret and never expose it in frontend code.
 
 ## Getting Started
 
@@ -52,6 +54,23 @@ npm run build
 ```bash
 npm run server:start
 ```
+
+## Vercel Production Routing
+
+- API endpoints are implemented under `api/`:
+  - `GET /api/health`
+  - `POST /api/payments/paynow/initiate`
+  - `POST /api/payments/paynow/callback`
+  - `GET /api/payments/paynow/status/:reference`
+- SPA route fallback (`/payment/complete`) is configured in `vercel.json`.
+
+Required Vercel environment variables:
+
+- `PAYNOW_INTEGRATION_ID`
+- `PAYNOW_INTEGRATION_KEY`
+- `PAYNOW_RESULT_URL` (example: `https://www.flavourflows.com/api/payments/paynow/callback`)
+- `PAYNOW_RETURN_URL` (example: `https://www.flavourflows.com/payment/complete`)
+- `PAYNOW_COOKIE_SECRET`
 
 ## Database (Catalog + Inventory)
 

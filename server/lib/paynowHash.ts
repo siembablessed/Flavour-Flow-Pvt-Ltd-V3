@@ -25,6 +25,7 @@ export function verifyPaynowHash(payload: PaynowPayload, integrationKey: string)
     .map(([, value]) => (value ?? "").trim())
     .join("");
 
-  const computed = crypto.createHash("md5").update(`${content}${integrationKey}`, "utf8").digest("hex");
+  const computed = crypto.createHash("sha512").update(`${content}${integrationKey.toLowerCase()}`, "utf8").digest("hex");
   return safeEqual(computed.toUpperCase(), receivedHash.toUpperCase());
 }
+

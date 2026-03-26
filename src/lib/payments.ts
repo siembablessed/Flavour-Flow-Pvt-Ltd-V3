@@ -39,6 +39,7 @@ export async function initiatePaynowPayment(input: InitiatePaynowRequest): Promi
   const response = await fetch("/api/payments/paynow/initiate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(input),
   });
 
@@ -46,6 +47,8 @@ export async function initiatePaynowPayment(input: InitiatePaynowRequest): Promi
 }
 
 export async function getPaynowStatus(reference: string): Promise<PaynowStatusResponse> {
-  const response = await fetch(`/api/payments/paynow/status/${encodeURIComponent(reference)}`);
+  const response = await fetch(`/api/payments/paynow/status/${encodeURIComponent(reference)}`, {
+    credentials: "include",
+  });
   return parseApiResponse<PaynowStatusResponse>(response);
 }
