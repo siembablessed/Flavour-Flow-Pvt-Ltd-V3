@@ -68,7 +68,7 @@ const initiateSchema = z.object({
 });
 
 function createPaynowClient(returnUrl = env.PAYNOW_RETURN_URL): Paynow {
-  const client = new Paynow(env.PAYNOW_INTEGRATION_ID, env.PAYNOW_INTEGRATION_KEY);
+  const client = new Paynow(String(env.PAYNOW_INTEGRATION_ID), env.PAYNOW_INTEGRATION_KEY);
   client.resultUrl = env.PAYNOW_RESULT_URL;
   client.returnUrl = returnUrl;
   return client;
@@ -81,6 +81,7 @@ type PaymentState = {
   status: string;
   paid: boolean;
   updatedAt: number;
+  orderNumber: string;
 };
 
 const paymentStore = new Map<string, PaymentState>();
@@ -142,7 +143,7 @@ app.post("/api/payments/paynow/initiate", checkoutLimiter, async (req, res) => {
     const paynow = createPaynowClient(returnUrl);
 
     const payment = paynow.createPayment(reference, payerEmail);
-    payment.add(totals.description, totals.amount);
+    payment.add(totals.description, Math.round(totals.amount * 100));
 
     if (phone) {
       payment.info = `Mobile ${phone}`;
@@ -162,16 +163,20 @@ app.post("/api/payments/paynow/initiate", checkoutLimiter, async (req, res) => {
       status: "sent",
       paid: false,
       updatedAt: Date.now(),
+      orderNumber: reference,
     });
 
     res.status(201).json({
       reference,
+      orderNumber: reference,
       redirectUrl: response.redirectUrl,
       pollUrl: response.pollUrl,
       amount: totals.amount,
     });
-  } catch {
-    res.status(502).json({ error: "Paynow request failed" });
+  } catch (error) {
+    console.error("Paynow initiate error:", error);
+    const message = error instanceof Error ? error.message : "Paynow request failed";
+    res.status(502).json({ error: message });
   }
 });
 

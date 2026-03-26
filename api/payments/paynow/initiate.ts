@@ -110,7 +110,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const paynow = createPaynowClient(returnUrl);
 
       const payment = paynow.createPayment(reference, payerEmail);
-      payment.add(totals.description, totals.amount);
+      payment.add(totals.description, Math.round(totals.amount * 100));
       if (phone) {
         payment.info = `Mobile ${phone}`;
       }
@@ -149,9 +149,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         pollUrl: response.pollUrl,
         amount: totals.amount,
       });
-    } catch {
+    } catch (error) {
+      console.error("Paynow initiate error:", error);
       await safeMarkPaymentFailed(reference, "paynow_request_failed");
-      res.status(502).json({ error: "Paynow request failed" });
+      const message = error instanceof Error ? error.message : "Paynow request failed";
+      res.status(502).json({ error: message });
     }
   } catch {
     res.status(500).json({ error: "Unexpected payment server error" });

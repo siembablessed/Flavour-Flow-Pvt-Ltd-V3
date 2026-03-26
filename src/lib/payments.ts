@@ -28,12 +28,23 @@ export interface PaynowStatusResponse {
 
 async function parseApiResponse<T>(response: Response): Promise<T> {
   const raw = await response.text();
+
+  if (!raw || raw.trim() === "") {
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+    throw new Error("Empty response from server");
+  }
+
   let payload: unknown = null;
 
   try {
-    payload = raw ? JSON.parse(raw) : null;
+    payload = JSON.parse(raw);
   } catch {
-    payload = null;
+    if (!response.ok) {
+      throw new Error(raw.trim() || `API request failed with status ${response.status}`);
+    }
+    throw new Error("Invalid JSON response from server");
   }
 
   if (!response.ok) {
