@@ -19,6 +19,7 @@ export const config = {
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Cache-Control", "no-store");
+  console.log("[Paynow Callback] Received callback request");
 
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -31,11 +32,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     env = getEnv();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid environment";
+    console.error("[Paynow Callback] Environment error:", message);
     res.status(500).json({ error: message });
     return;
   }
 
   const paynow = new Paynow(env.PAYNOW_INTEGRATION_ID, env.PAYNOW_INTEGRATION_KEY, env.PAYNOW_RESULT_URL, env.PAYNOW_RETURN_URL);
+  console.log("[Paynow Callback] Paynow client created");
 
   let reference = "";
   let providerStatus = "unknown";

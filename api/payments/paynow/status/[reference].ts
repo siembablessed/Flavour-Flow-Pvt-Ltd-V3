@@ -50,7 +50,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const paynow = new Paynow(env.PAYNOW_INTEGRATION_ID, env.PAYNOW_INTEGRATION_KEY, env.PAYNOW_RESULT_URL, env.PAYNOW_RETURN_URL);
+    console.log("[Paynow Status] Polling transaction from:", state.pollUrl);
     const poll = await paynow.pollTransaction(state.pollUrl);
+    console.log("[Paynow Status] Poll response:", JSON.stringify(poll));
     const providerStatus = String(poll?.status ?? "unknown");
 
     const sync = await syncPaymentStatus(reference, providerStatus);

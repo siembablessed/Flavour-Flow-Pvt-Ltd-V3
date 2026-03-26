@@ -53,11 +53,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
+    console.log("[Paynow Initiate] Starting payment initiation...");
+    console.log("[Paynow Initiate] Request body:", JSON.stringify(req.body));
+
     let env;
     try {
       env = getEnv();
+      console.log("[Paynow Initiate] Environment loaded. Integration ID:", env.PAYNOW_INTEGRATION_ID);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid environment";
+      console.error("[Paynow Initiate] Environment error:", message);
       res.status(500).json({ error: message });
       return;
     }
@@ -107,15 +112,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     try {
       const returnSeparator = env.PAYNOW_RETURN_URL.includes("?") ? "&" : "?";
       const returnUrl = `${env.PAYNOW_RETURN_URL}${returnSeparator}reference=${encodeURIComponent(reference)}`;
+      console.log("[Paynow Initiate] Creating Paynow client with returnUrl:", returnUrl);
+      
       const paynow = createPaynowClient(returnUrl);
+      console.log("[Paynow Initiate] Paynow client created successfully");
 
       const payment = paynow.createPayment(reference, payerEmail);
+      console.log("[Paynow Initiate] Payment created with reference:", reference, ", amount:", Math.round(totals.amount * 100));
+      
       payment.add(totals.description, Math.round(totals.amount * 100));
       if (phone) {
         payment.info = `Mobile ${phone}`;
       }
 
+      console.log("[Paynow Initiate] Sending payment to Paynow...");
       const response = await paynow.send(payment);
+      console.log("[Paynow Initiate] Paynow response:", JSON.stringify(response));
       if (!response?.success || !response.pollUrl || !response.redirectUrl) {
         await safeMarkPaymentFailed(reference, "initiate_failed");
         res.status(502).json({ error: "Unable to initialize Paynow payment" });
