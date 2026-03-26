@@ -37,12 +37,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const paynow = new Paynow(env.PAYNOW_INTEGRATION_ID, env.PAYNOW_INTEGRATION_KEY, env.PAYNOW_RESULT_URL, env.PAYNOW_RETURN_URL);
 
+  let reference = "";
+  let providerStatus = "unknown";
+
   try {
     const raw = await readRawBody(req);
     const status = paynow.parseStatusUpdate(raw);
-    const reference = String(status.reference ?? "").trim();
-    const providerStatus = String(status.status ?? "unknown");
+    reference = String(status.reference ?? "").trim();
+    providerStatus = String(status.status ?? "unknown");
+  } catch {
+    res.status(401).json({ error: "Invalid callback signature" });
+    return;
+  }
 
+  if (!reference) {
+    res.status(400).json({ error: "Missing reference" });
+    return;
+  }
+
+  try {
     const sync = await syncPaymentStatus(reference, providerStatus);
 
     res.status(200).json({
@@ -54,7 +67,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       paid: sync.paid,
     });
   } catch {
-    res.status(401).json({ error: "Invalid callback signature" });
+    res.status(500).json({ error: "Unable to persist callback status" });
   }
 }
-

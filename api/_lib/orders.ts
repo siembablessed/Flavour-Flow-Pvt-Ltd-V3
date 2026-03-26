@@ -37,7 +37,10 @@ function mapPaymentStatus(providerStatus: string): "paid" | "failed" | "sent" | 
 
 async function deleteOrderCascade(orderId: string): Promise<void> {
   const admin = getAdminClient();
-  await admin.from("orders").delete().eq("id", orderId);
+  const { error } = await admin.from("orders").delete().eq("id", orderId);
+  if (error) {
+    throw new Error("Failed to rollback order");
+  }
 }
 
 export async function createOrderWithPayment(input: OrderCreateInput): Promise<CreatedOrder> {
@@ -100,24 +103,35 @@ export async function createOrderWithPayment(input: OrderCreateInput): Promise<C
 export async function markPaymentDispatched(reference: string, pollUrl: string): Promise<void> {
   const admin = getAdminClient();
 
-  await admin
+  const { data, error } = await admin
     .from("order_payments")
     .update({ status: "sent", poll_url: pollUrl, provider_status: "sent" })
-    .eq("reference", reference);
+    .eq("reference", reference)
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    throw new Error("Failed to mark payment as dispatched");
+  }
 }
 
 export async function markPaymentFailed(reference: string, reason: string): Promise<void> {
   const admin = getAdminClient();
 
-  const { data: payment } = await admin
+  const { data: payment, error: paymentError } = await admin
     .from("order_payments")
     .update({ status: "failed", provider_status: reason })
     .eq("reference", reference)
     .select("order_id")
     .single();
 
-  if (payment?.order_id) {
-    await admin.from("orders").update({ status: "payment_failed" }).eq("id", payment.order_id);
+  if (paymentError || !payment?.order_id) {
+    throw new Error("Failed to mark payment as failed");
+  }
+
+  const { error: orderError } = await admin.from("orders").update({ status: "payment_failed" }).eq("id", payment.order_id);
+  if (orderError) {
+    throw new Error("Failed to mark order as payment_failed");
   }
 }
 
@@ -158,12 +172,16 @@ export async function syncPaymentStatus(reference: string, providerStatus: strin
     orderPatch.paid_at = new Date().toISOString();
   }
 
-  const { data: order } = await admin
+  const { data: order, error: orderError } = await admin
     .from("orders")
     .update(orderPatch)
     .eq("id", payment.order_id)
     .select("order_number")
     .single();
+
+  if (orderError) {
+    throw new Error("Failed to sync order status");
+  }
 
   return {
     orderNumber: order?.order_number ?? null,

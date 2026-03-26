@@ -78,7 +78,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    const { items, email, method } = parsed.data;
+    const { items, email, method, phone } = parsed.data;
 
     let totals;
     try {
@@ -111,6 +111,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
       const payment = paynow.createPayment(reference, payerEmail);
       payment.add(totals.description, totals.amount);
+      if (phone) {
+        payment.info = `Mobile ${phone}`;
+      }
 
       const response = await paynow.send(payment);
       if (!response?.success || !response.pollUrl || !response.redirectUrl) {

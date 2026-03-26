@@ -27,10 +27,20 @@ export interface PaynowStatusResponse {
 }
 
 async function parseApiResponse<T>(response: Response): Promise<T> {
-  const payload = await response.json();
+  const raw = await response.text();
+  let payload: unknown = null;
+
+  try {
+    payload = raw ? JSON.parse(raw) : null;
+  } catch {
+    payload = null;
+  }
 
   if (!response.ok) {
-    const message = typeof payload?.error === "string" ? payload.error : "API request failed";
+    const message =
+      payload && typeof payload === "object" && "error" in payload && typeof (payload as { error: unknown }).error === "string"
+        ? (payload as { error: string }).error
+        : raw?.trim() || "API request failed";
     throw new Error(message);
   }
 
