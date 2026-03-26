@@ -89,11 +89,7 @@ const CartDrawer = ({ open, onClose }: CartDrawerProps) => {
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
         total={totalPrice}
-        onSuccess={() => {
-          clearCart();
-          setPaymentOpen(false);
-          onClose();
-        }}
+        items={items.map((item) => ({ id: item.product.id, quantity: item.quantity }))}
       />
     </>
   );
