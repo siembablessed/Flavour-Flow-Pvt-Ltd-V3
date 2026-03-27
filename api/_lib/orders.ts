@@ -1,5 +1,5 @@
-import { getAdminClient } from "./supabaseAdmin";
-import type { CheckoutTotals } from "./catalog";
+import { getAdminClient } from "./supabaseAdmin.js";
+import type { CheckoutTotals } from "./catalog.js";
 
 export interface OrderCreateInput {
   reference: string;

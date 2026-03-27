@@ -1,7 +1,7 @@
-import type { ApiRequest, ApiResponse } from "../../_lib/httpTypes";
+import type { ApiRequest, ApiResponse } from "../../_lib/httpTypes.js";
 import { Paynow } from "paynow";
-import { getEnv } from "../../_lib/env";
-import { syncPaymentStatus } from "../../_lib/orders";
+import { getEnv } from "../../_lib/env.js";
+import { syncPaymentStatus } from "../../_lib/orders.js";
 
 async function readRawBody(req: ApiRequest): Promise<string> {
   const chunks: Buffer[] = [];

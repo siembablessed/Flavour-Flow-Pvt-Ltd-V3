@@ -1,11 +1,11 @@
-import type { ApiRequest, ApiResponse } from "../../_lib/httpTypes";
+import type { ApiRequest, ApiResponse } from "../../_lib/httpTypes.js";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { Paynow } from "paynow";
-import { calculateCheckoutTotals } from "../../_lib/catalog";
-import { getEnv } from "../../_lib/env";
-import { serializeStateCookie } from "../../_lib/state";
-import { createOrderWithPayment, markPaymentDispatched, markPaymentFailed } from "../../_lib/orders";
+import { calculateCheckoutTotals } from "../../_lib/catalog.js";
+import { getEnv } from "../../_lib/env.js";
+import { serializeStateCookie } from "../../_lib/state.js";
+import { createOrderWithPayment, markPaymentDispatched, markPaymentFailed } from "../../_lib/orders.js";
 
 const initiateSchema = z
   .object({

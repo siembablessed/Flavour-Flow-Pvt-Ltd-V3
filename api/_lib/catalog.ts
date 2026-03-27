@@ -1,4 +1,4 @@
-import { getAdminClient } from "./supabaseAdmin";
+import { getAdminClient } from "./supabaseAdmin.js";
 
 export interface CartLineInput {
   id: string;

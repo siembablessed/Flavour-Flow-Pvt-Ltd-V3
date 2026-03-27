@@ -1,8 +1,8 @@
-import type { ApiRequest, ApiResponse } from "../_lib/httpTypes";
+import type { ApiRequest, ApiResponse } from "../_lib/httpTypes.js";
 import { z } from "zod";
-import { getEnv } from "../_lib/env";
-import { getAdminClient } from "../_lib/supabaseAdmin";
-import { createAnonymousSessionId, readAnonymousSessionId, serializeAnonymousSessionCookie } from "../_lib/anonCart";
+import { getEnv } from "../_lib/env.js";
+import { getAdminClient } from "../_lib/supabaseAdmin.js";
+import { createAnonymousSessionId, readAnonymousSessionId, serializeAnonymousSessionCookie } from "../_lib/anonCart.js";
 
 const payloadSchema = z.object({
   items: z

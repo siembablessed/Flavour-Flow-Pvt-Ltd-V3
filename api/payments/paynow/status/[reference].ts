@@ -1,8 +1,8 @@
-import type { ApiRequest, ApiResponse } from "../../../_lib/httpTypes";
+import type { ApiRequest, ApiResponse } from "../../../_lib/httpTypes.js";
 import { Paynow } from "paynow";
-import { clearStateCookie, readStateFromCookie } from "../../../_lib/state";
-import { getEnv } from "../../../_lib/env";
-import { getOrderByReference, syncPaymentStatus } from "../../../_lib/orders";
+import { clearStateCookie, readStateFromCookie } from "../../../_lib/state.js";
+import { getEnv } from "../../../_lib/env.js";
+import { getOrderByReference, syncPaymentStatus } from "../../../_lib/orders.js";
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Cache-Control", "no-store");
@@ -72,5 +72,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.status(502).json({ error: "Unable to poll Paynow transaction" });
   }
 }
+
 
 
