@@ -7,24 +7,34 @@ import { getEnv } from "../../_lib/env";
 import { serializeStateCookie } from "../../_lib/state";
 import { createOrderWithPayment, markPaymentDispatched, markPaymentFailed } from "../../_lib/orders";
 
-const initiateSchema = z.object({
-  email: z.string().email().optional(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^[0-9+]{8,15}$/)
-    .optional(),
-  method: z.enum(["ecocash", "onemoney", "visa"]),
-  items: z
-    .array(
-      z.object({
-        id: z.string().trim().min(1).max(50),
-        quantity: z.number().int().min(1).max(100),
-      }),
-    )
-    .min(1)
-    .max(200),
-});
+const initiateSchema = z
+  .object({
+    email: z.string().email().optional(),
+    phone: z
+      .string()
+      .trim()
+      .regex(/^[0-9+]{8,15}$/)
+      .optional(),
+    method: z.enum(["ecocash", "onemoney", "visa"]),
+    items: z
+      .array(
+        z.object({
+          id: z.string().trim().min(1).max(50),
+          quantity: z.number().int().min(1).max(100),
+        }),
+      )
+      .min(1)
+      .max(200),
+  })
+  .superRefine((value, ctx) => {
+    if (value.method !== "visa" && !value.phone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["phone"],
+        message: "Phone number is required for mobile money methods",
+      });
+    }
+  });
 
 function createReference(): string {
   return `WF-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
@@ -36,7 +46,7 @@ function createPaynowClient(returnUrl: string): Paynow {
     String(env.PAYNOW_INTEGRATION_ID),
     env.PAYNOW_INTEGRATION_KEY,
     env.PAYNOW_RESULT_URL,
-    returnUrl
+    returnUrl,
   );
 }
 
@@ -58,33 +68,24 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    console.log("[Paynow Initiate] Starting payment initiation...");
-    console.log("[Paynow Initiate] Request body:", JSON.stringify(req.body));
-
     let env;
     try {
       env = getEnv();
-      console.log("[Paynow Initiate] Environment loaded. Integration ID:", env.PAYNOW_INTEGRATION_ID);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid environment";
-      console.error("[Paynow Initiate] Environment error:", message);
       res.status(500).json({ error: message });
       return;
     }
 
     const originHeader = req.headers?.origin;
     const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
-    console.log("[Paynow Initiate] Origin header:", origin);
     if (origin && !env.allowedOrigins.includes(origin)) {
-      console.log("[Paynow Initiate] Origin not allowed:", origin, "Allowed:", env.allowedOrigins);
       res.status(403).json({ error: "Origin not allowed" });
       return;
     }
 
     const parsed = initiateSchema.safeParse(req.body);
-    console.log("[Paynow Initiate] Parsed request:", JSON.stringify(parsed.data));
     if (!parsed.success) {
-      console.log("[Paynow Initiate] Validation failed:", parsed.error.flatten().fieldErrors);
       res.status(400).json({
         error: "Invalid payment payload",
         details: parsed.error.flatten().fieldErrors,
@@ -93,14 +94,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const { items, email, method, phone } = parsed.data;
+    const isExpressMobile = method === "ecocash" || method === "onemoney";
 
     let totals;
     try {
-      console.log("[Paynow Initiate] Calculating totals for items:", JSON.stringify(items));
       totals = await calculateCheckoutTotals(items);
-      console.log("[Paynow Initiate] Totals calculated:", JSON.stringify(totals));
-    } catch (error) {
-      console.error("[Paynow Initiate] Cart calculation error:", error);
+    } catch {
       res.status(400).json({ error: "Invalid cart items" });
       return;
     }
@@ -110,16 +109,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     let createdOrder;
     try {
-      console.log("[Paynow Initiate] Creating order with reference:", reference);
       createdOrder = await createOrderWithPayment({
         reference,
         customerEmail: payerEmail,
         paymentMethod: method,
         totals,
       });
-      console.log("[Paynow Initiate] Order created:", JSON.stringify(createdOrder));
-    } catch (error) {
-      console.error("[Paynow Initiate] Order creation error:", error);
+    } catch {
       res.status(500).json({ error: "Unable to create order" });
       return;
     }
@@ -127,25 +123,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     try {
       const returnSeparator = env.PAYNOW_RETURN_URL.includes("?") ? "&" : "?";
       const returnUrl = `${env.PAYNOW_RETURN_URL}${returnSeparator}reference=${encodeURIComponent(reference)}`;
-      console.log("[Paynow Initiate] Creating Paynow client with returnUrl:", returnUrl);
-
       const paynow = createPaynowClient(returnUrl);
-      console.log("[Paynow Initiate] Paynow client created successfully");
 
       const payment = paynow.createPayment(reference, payerEmail);
-      console.log("[Paynow Initiate] Payment created with reference:", reference, ", amount:", Math.round(totals.amount * 100));
+      payment.add(totals.description, totals.amount);
 
-      payment.add(totals.description, Math.round(totals.amount * 100));
       if (phone) {
         payment.info = `Mobile ${phone}`;
       }
 
-      console.log("[Paynow Initiate] Sending payment to Paynow...");
-      const response = await paynow.send(payment);
-      console.log("[Paynow Initiate] Paynow response:", JSON.stringify(response));
+      const response = isExpressMobile
+        ? await paynow.sendMobile(payment, phone ?? "", method)
+        : await paynow.send(payment);
 
-      if (!response?.success || !response.pollUrl || !response.redirectUrl) {
-        console.error("[Paynow Initiate] Paynow initialization failed. Response:", response);
+      if (!response?.success || !response.pollUrl || (!isExpressMobile && !response.redirectUrl)) {
         await safeMarkPaymentFailed(reference, "initiate_failed");
         res.status(502).json({ error: "Unable to initialize Paynow payment" });
         return;
@@ -171,22 +162,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       );
 
       res.setHeader("Set-Cookie", stateCookie);
-      console.log("[Paynow Initiate] SUCCESS - Sending response:", { reference, orderNumber: createdOrder.orderNumber, redirectUrl: response.redirectUrl });
       res.status(201).json({
         reference,
         orderNumber: createdOrder.orderNumber,
-        redirectUrl: response.redirectUrl,
+        redirectUrl: response.redirectUrl ?? null,
         pollUrl: response.pollUrl,
         amount: totals.amount,
+        instructions: response.instructions ?? null,
+        mode: isExpressMobile ? "express" : "redirect",
       });
-    } catch (error) {
-      console.error("[Paynow Initiate] Paynow request error:", error);
+    } catch {
       await safeMarkPaymentFailed(reference, "paynow_request_failed");
-      const message = error instanceof Error ? error.message : "Paynow request failed";
-      res.status(502).json({ error: message });
+      res.status(502).json({ error: "Paynow request failed" });
     }
-  } catch (error) {
-    console.error("[Paynow Initiate] Unexpected error:", error);
+  } catch {
     res.status(500).json({ error: "Unexpected payment server error" });
   }
 }

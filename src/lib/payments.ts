@@ -13,9 +13,11 @@ export interface InitiatePaynowRequest {
 export interface InitiatePaynowResponse {
   reference: string;
   orderNumber: string;
-  redirectUrl: string;
+  redirectUrl: string | null;
   pollUrl: string;
   amount: number;
+  instructions: string | null;
+  mode: "express" | "redirect";
 }
 
 export interface PaynowStatusResponse {

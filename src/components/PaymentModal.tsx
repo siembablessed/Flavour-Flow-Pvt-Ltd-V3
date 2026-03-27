@@ -43,8 +43,14 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
         items,
       });
 
-      toast.success("Redirecting to Paynow...");
-      window.location.assign(payment.redirectUrl);
+      if (payment.redirectUrl) {
+        toast.success("Redirecting to Paynow...");
+        window.location.assign(payment.redirectUrl);
+        return;
+      }
+
+      toast.success(payment.instructions || "Payment request sent. Complete approval on your phone.");
+      window.location.assign(`/payment/complete?reference=${encodeURIComponent(payment.reference)}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to initiate payment";
       toast.error(message);
