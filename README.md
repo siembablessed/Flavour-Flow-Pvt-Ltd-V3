@@ -89,3 +89,5 @@ Generate a fresh catalog seed from static data:
 ```bash
 npm run db:seed:generate
 ```
+
+v2.9
