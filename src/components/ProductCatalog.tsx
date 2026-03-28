@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { useCatalog } from "@/hooks/useCatalog";
 import { useSavedCatalog } from "@/hooks/useSavedCatalog";
+import { getProductImage } from "@/lib/productImages";
 
 // Dummy ads data
 const sidebarAds = [
@@ -170,51 +171,64 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
               {filtered.map((product, i) => (
                 <div
                   key={product.id}
-                  className={`group bg-card rounded-xl p-5 border border-transparent hover:border-primary/20 hover:shadow-md transition-all duration-300 ${
+                  className={`group relative overflow-hidden bg-card rounded-xl p-5 border border-transparent hover:border-primary/20 hover:shadow-md transition-all duration-300 ${
                     visible ? "animate-fade-up" : "opacity-0"
                   }`}
                   style={{ animationDelay: `${Math.min(i * 0.04, 0.4)}s` }}
                 >
-              <div className="flex items-start justify-between mb-3">
-                <div className="min-w-0 flex-1">
-                  <span className="inline-block text-[10px] uppercase tracking-widest text-primary font-bold mb-1">{product.category}</span>
-                  <h3 className="text-sm font-bold text-foreground leading-snug truncate">{product.name}</h3>
+                  <div className="mb-3 flex items-start gap-3">
+                    {getProductImage(product) && (
+                      <div className="flex h-24 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/40">
+                        <img
+                          src={getProductImage(product)}
+                          alt={product.name}
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-start justify-between gap-2">
+                        <span className="inline-block text-[10px] font-bold uppercase tracking-widest text-primary">{product.category}</span>
+                        <span className="flex-shrink-0 rounded bg-muted px-2 py-0.5 font-mono text-[10px] text-foreground/30">{product.code}</span>
+                      </div>
+                      <h3 className="text-sm font-bold leading-snug text-foreground">{product.name}</h3>
+                      <p className="mt-2 text-xs text-foreground/40">{product.pack}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-lg font-bold tabular-nums text-foreground">
+                        ${product.casePrice.toFixed(2)}
+                        <span className="ml-0.5 text-xs font-normal text-foreground/30">/case</span>
+                      </p>
+                      <p className="text-[11px] tabular-nums text-foreground/40">${product.unitPriceVat.toFixed(2)}/unit incl. VAT</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => void toggleSave(product)}
+                        disabled={isUpdating}
+                        className={`p-2.5 rounded-lg border transition-colors active:scale-95 ${
+                          savedSet.has(product.id)
+                            ? "border-rose-200 bg-rose-50 text-rose-600"
+                            : "border-border text-foreground/50 hover:bg-muted"
+                        }`}
+                        aria-label={`Save ${product.name}`}
+                      >
+                        <Heart className={`w-4 h-4 ${savedSet.has(product.id) ? "fill-current" : ""}`} />
+                      </button>
+                      <button
+                        onClick={() => handleAdd(product)}
+                        className="rounded-lg bg-accent p-2.5 text-white shadow-sm transition-colors active:scale-95 hover:bg-accent/90"
+                        aria-label={`Add ${product.name} to cart`}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-[10px] text-foreground/30 bg-muted px-2 py-0.5 rounded font-mono ml-2 flex-shrink-0">{product.code}</span>
-              </div>
-              <p className="text-xs text-foreground/40 mb-4">{product.pack}</p>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-lg font-bold tabular-nums text-foreground">
-                    ${product.casePrice.toFixed(2)}
-                    <span className="text-xs text-foreground/30 font-normal ml-0.5">/case</span>
-                  </p>
-                  <p className="text-[11px] text-foreground/40 tabular-nums">${product.unitPriceVat.toFixed(2)}/unit incl. VAT</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => void toggleSave(product)}
-                    disabled={isUpdating}
-                    className={`p-2.5 rounded-lg border transition-colors active:scale-95 ${
-                      savedSet.has(product.id)
-                        ? "border-rose-200 bg-rose-50 text-rose-600"
-                        : "border-border text-foreground/50 hover:bg-muted"
-                    }`}
-                    aria-label={`Save ${product.name}`}
-                  >
-                    <Heart className={`w-4 h-4 ${savedSet.has(product.id) ? "fill-current" : ""}`} />
-                  </button>
-                  <button
-                    onClick={() => handleAdd(product)}
-                    className="p-2.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors active:scale-95 shadow-sm"
-                    aria-label={`Add ${product.name} to cart`}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+              ))}
             </div>
           </div>
 

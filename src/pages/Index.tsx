@@ -72,14 +72,13 @@ const Index = () => {
                 </div>
                 <h3 className="text-xl font-bold text-white mb-3">Contact Numbers</h3>
                 <p className="text-gray-300 leading-relaxed">
-                  +263 771 420 031<br />
+                  00263 7714 20031<br />
                   +263 78 906 3927
                 </p>
               </div>
             </div>
           </div>
         </section>
-        
         <Footer />
         <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
       </div>
