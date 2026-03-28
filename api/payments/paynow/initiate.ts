@@ -99,8 +99,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     let totals;
     try {
       totals = await calculateCheckoutTotals(items);
-    } catch {
-      res.status(400).json({ error: "Invalid cart items" });
+    } catch (error) {
+      const details = error instanceof Error ? error.message : "Unknown cart validation failure";
+      res.status(400).json({ error: "Invalid cart items", details });
       return;
     }
 
