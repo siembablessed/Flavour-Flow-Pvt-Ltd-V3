@@ -32,6 +32,17 @@ function normalizeId(id: string): string {
   return id.trim().toLowerCase();
 }
 
+function toErrorDetails(value: unknown): string {
+  if (!value || typeof value !== "object") {
+    return "unknown";
+  }
+
+  const message = "message" in value ? String((value as { message?: unknown }).message ?? "") : "";
+  const details = "details" in value ? String((value as { details?: unknown }).details ?? "") : "";
+  const code = "code" in value ? String((value as { code?: unknown }).code ?? "") : "";
+  return [message, details, code].filter(Boolean).join(" | ") || "unknown";
+}
+
 async function loadCatalogRows(ids: string[]): Promise<CatalogRow[]> {
   const client = getAdminClient();
 
@@ -51,7 +62,9 @@ async function loadCatalogRows(ids: string[]): Promise<CatalogRow[]> {
     .eq("is_active", true);
 
   if (fromView.error || !fromView.data) {
-    throw new Error("Unable to load catalog prices");
+    const productsErr = toErrorDetails(fromProducts.error);
+    const viewErr = toErrorDetails(fromView.error);
+    throw new Error(`Unable to load catalog prices. products_error=${productsErr}; v_catalog_error=${viewErr}`);
   }
 
   return fromView.data as CatalogRow[];
