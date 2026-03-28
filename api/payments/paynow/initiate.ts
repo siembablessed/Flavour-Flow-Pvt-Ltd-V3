@@ -7,34 +7,24 @@ import { getEnv } from "../../_lib/env.js";
 import { serializeStateCookie } from "../../_lib/state.js";
 import { createOrderWithPayment, markPaymentDispatched, markPaymentFailed } from "../../_lib/orders.js";
 
-const initiateSchema = z
-  .object({
-    email: z.string().email().optional(),
-    phone: z
-      .string()
-      .trim()
-      .regex(/^[0-9+]{8,15}$/)
-      .optional(),
-    method: z.enum(["ecocash", "onemoney", "visa"]),
-    items: z
-      .array(
-        z.object({
-          id: z.string().trim().min(1).max(50),
-          quantity: z.number().int().min(1).max(100),
-        }),
-      )
-      .min(1)
-      .max(200),
-  })
-  .superRefine((value, ctx) => {
-    if (value.method !== "visa" && !value.phone) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["phone"],
-        message: "Phone number is required for mobile money methods",
-      });
-    }
-  });
+const initiateSchema = z.object({
+  email: z.string().email().optional(),
+  method: z.enum(["ecocash", "onemoney", "visa"]).optional(),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^[0-9+]{8,15}$/)
+    .optional(),
+  items: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1).max(50),
+        quantity: z.number().int().min(1).max(100),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
 
 function createReference(): string {
   return `WF-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
@@ -93,8 +83,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    const { items, email, method, phone } = parsed.data;
-    const isExpressMobile = method === "ecocash" || method === "onemoney";
+    const { items, email } = parsed.data;
 
     let totals;
     try {
@@ -113,7 +102,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       createdOrder = await createOrderWithPayment({
         reference,
         customerEmail: payerEmail,
-        paymentMethod: method,
+        paymentMethod: "paynow_redirect",
         totals,
       });
     } catch {
@@ -129,15 +118,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const payment = paynow.createPayment(reference, payerEmail);
       payment.add(totals.description, totals.amount);
 
-      if (phone) {
-        payment.info = `Mobile ${phone}`;
-      }
+      const response = await paynow.send(payment);
 
-      const response = isExpressMobile
-        ? await paynow.sendMobile(payment, phone ?? "", method)
-        : await paynow.send(payment);
-
-      if (!response?.success || !response.pollUrl || (!isExpressMobile && !response.redirectUrl)) {
+      if (!response?.success || !response.pollUrl || !response.redirectUrl) {
         await safeMarkPaymentFailed(reference, "initiate_failed");
         res.status(502).json({ error: "Unable to initialize Paynow payment" });
         return;
@@ -166,11 +149,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       res.status(201).json({
         reference,
         orderNumber: createdOrder.orderNumber,
-        redirectUrl: response.redirectUrl ?? null,
+        redirectUrl: response.redirectUrl,
         pollUrl: response.pollUrl,
         amount: totals.amount,
-        instructions: response.instructions ?? null,
-        mode: isExpressMobile ? "express" : "redirect",
+        instructions: null,
+        mode: "redirect",
       });
     } catch {
       await safeMarkPaymentFailed(reference, "paynow_request_failed");

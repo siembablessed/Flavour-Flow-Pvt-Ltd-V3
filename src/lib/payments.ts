@@ -4,8 +4,6 @@ export interface CheckoutLine {
 }
 
 export interface InitiatePaynowRequest {
-  method: "ecocash" | "onemoney" | "visa";
-  phone?: string;
   email?: string;
   items: CheckoutLine[];
 }
@@ -17,7 +15,7 @@ export interface InitiatePaynowResponse {
   pollUrl: string;
   amount: number;
   instructions: string | null;
-  mode: "express" | "redirect";
+  mode: "redirect";
 }
 
 export interface PaynowStatusResponse {

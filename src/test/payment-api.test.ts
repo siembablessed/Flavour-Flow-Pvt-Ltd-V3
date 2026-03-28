@@ -11,7 +11,6 @@ const mockGetEnv = vi.fn();
 
 const mockCreatePayment = vi.fn();
 const mockSend = vi.fn();
-const mockSendMobile = vi.fn();
 const mockParseStatusUpdate = vi.fn();
 
 vi.mock("../../api/_lib/orders", () => ({
@@ -37,7 +36,6 @@ vi.mock("paynow", () => ({
   Paynow: vi.fn().mockImplementation(() => ({
     createPayment: mockCreatePayment,
     send: mockSend,
-    sendMobile: mockSendMobile,
     parseStatusUpdate: mockParseStatusUpdate,
   })),
 }));
@@ -134,22 +132,14 @@ describe("payment api handlers", () => {
       pollUrl: "https://poll",
       redirectUrl: "https://redirect",
     });
-
-    mockSendMobile.mockResolvedValue({
-      success: true,
-      pollUrl: "https://poll-mobile",
-      instructions: "Approve on your phone",
-    });
   });
 
-  it("uses express mobile initiation for ecocash", async () => {
-    const paymentPayload: { add: ReturnType<typeof vi.fn>; info?: string } = { add: vi.fn() };
+  it("uses standard redirect initiation", async () => {
+    const paymentPayload: { add: ReturnType<typeof vi.fn> } = { add: vi.fn() };
     mockCreatePayment.mockReturnValue(paymentPayload);
 
     const { default: initiateHandler } = await import("../../api/payments/paynow/initiate");
     const req = makePostRequest({
-      method: "ecocash",
-      phone: "0771234567",
       items: [{ id: "prod-1", quantity: 1 }],
     });
     const response = createMockResponse();
@@ -157,9 +147,7 @@ describe("payment api handlers", () => {
     await initiateHandler(req, response.res);
 
     expect(response.statusCode).toBe(201);
-    expect(paymentPayload.info).toBe("Mobile 0771234567");
-    expect(mockSendMobile).toHaveBeenCalledWith(paymentPayload, "0771234567", "ecocash");
-    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledWith(paymentPayload);
   });
 
   it("returns 401 when callback signature parsing fails", async () => {
