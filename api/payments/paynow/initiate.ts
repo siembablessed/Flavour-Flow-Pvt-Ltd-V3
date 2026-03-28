@@ -2,7 +2,7 @@ import type { ApiRequest, ApiResponse } from "../../_lib/httpTypes.js";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { Paynow } from "paynow";
-import { calculateCheckoutTotals } from "../../_lib/catalog.js";
+import { calculateCheckoutTotals, type CartLineInput } from "../../_lib/catalog.js";
 import { getEnv } from "../../_lib/env.js";
 import { serializeStateCookie } from "../../_lib/state.js";
 import { createOrderWithPayment, markPaymentDispatched, markPaymentFailed } from "../../_lib/orders.js";
@@ -83,7 +83,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    const { items, email } = parsed.data;
+    const { items, email } = parsed.data as { items: CartLineInput[]; email?: string };
 
     let totals;
     try {
