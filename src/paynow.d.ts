@@ -8,6 +8,7 @@ declare module "paynow" {
     success: boolean;
     pollUrl?: string;
     redirectUrl?: string;
+    instructions?: string;
     error?: string;
   }
 
@@ -22,6 +23,7 @@ declare module "paynow" {
     returnUrl?: string;
     createPayment(reference: string, email: string): Payment;
     send(payment: Payment): Promise<PaymentResponse>;
+    sendMobile(payment: Payment, phone: string, method: "ecocash" | "onemoney"): Promise<PaymentResponse>;
     pollTransaction(pollUrl: string): Promise<TransactionStatus>;
     parseStatusUpdate(raw: string): { reference?: string; status?: string };
   }

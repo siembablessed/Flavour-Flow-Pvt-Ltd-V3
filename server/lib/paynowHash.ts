@@ -13,19 +13,25 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
+/**
+ * Verifies Paynow callback hash using the same field order as the official SDK
+ * (`Object.keys` insertion order), not alphabetical sorting.
+ */
 export function verifyPaynowHash(payload: PaynowPayload, integrationKey: string): boolean {
   const receivedHash = (payload.hash || payload.Hash || "").trim();
   if (!receivedHash) {
     return false;
   }
 
-  const content = Object.entries(payload)
-    .filter(([key]) => key.toLowerCase() !== "hash")
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, value]) => (value ?? "").trim())
-    .join("");
+  let string = "";
+  for (const key of Object.keys(payload)) {
+    if (key.toLowerCase() === "hash") {
+      continue;
+    }
+    string += (payload[key] ?? "").toString();
+  }
+  string += integrationKey.toLowerCase();
 
-  const computed = crypto.createHash("sha512").update(`${content}${integrationKey.toLowerCase()}`, "utf8").digest("hex");
+  const computed = crypto.createHash("sha512").update(string, "utf8").digest("hex");
   return safeEqual(computed.toUpperCase(), receivedHash.toUpperCase());
 }
-

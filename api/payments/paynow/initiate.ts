@@ -24,6 +24,14 @@ const initiateSchema = z.object({
     )
     .min(1)
     .max(200),
+}).superRefine((value, ctx) => {
+  if (value.method && value.method !== "visa" && !value.phone) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phone"],
+      message: "Phone is required for mobile money payments",
+    });
+  }
 });
 
 function createReference(): string {
@@ -83,7 +91,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    const { items, email } = parsed.data as { items: CartLineInput[]; email?: string };
+    const { items, email, method, phone } = parsed.data as {
+      items: CartLineInput[];
+      email?: string;
+      method?: "ecocash" | "onemoney" | "visa";
+      phone?: string;
+    };
 
     let totals;
     try {
@@ -102,7 +115,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       createdOrder = await createOrderWithPayment({
         reference,
         customerEmail: payerEmail,
-        paymentMethod: "paynow_redirect",
+        paymentMethod: method ? `paynow_${method}` : "paynow_redirect",
         totals,
       });
     } catch {
@@ -118,11 +131,37 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const payment = paynow.createPayment(reference, payerEmail);
       payment.add(totals.description, totals.amount);
 
-      const response = await paynow.send(payment);
+      const response = method && method !== "visa"
+        ? await paynow.sendMobile(payment, String(phone ?? ""), method)
+        : await paynow.send(payment);
 
-      if (!response?.success || !response.pollUrl || !response.redirectUrl) {
-        await safeMarkPaymentFailed(reference, "initiate_failed");
-        res.status(502).json({ error: "Unable to initialize Paynow payment" });
+      console.log("[Paynow Initiate] init response", JSON.stringify({
+        reference,
+        method: method ?? "redirect",
+        success: response?.success ?? false,
+        hasPollUrl: Boolean(response?.pollUrl),
+        hasRedirectUrl: Boolean(response?.redirectUrl),
+        hasInstructions: Boolean(response?.instructions),
+        error: response?.error ?? null,
+      }));
+
+      if (!response?.success || !response.pollUrl) {
+        await safeMarkPaymentFailed(reference, response?.error ?? "initiate_failed");
+        res.status(502).json({ error: response?.error || "Unable to initialize Paynow payment" });
+        return;
+      }
+
+      const mode = response.redirectUrl ? "redirect" : "mobile";
+
+      if (mode === "redirect" && !response.redirectUrl) {
+        await safeMarkPaymentFailed(reference, "missing_redirect_url");
+        res.status(502).json({ error: "Paynow did not provide a redirect URL" });
+        return;
+      }
+
+      if (mode === "mobile" && !response.instructions) {
+        await safeMarkPaymentFailed(reference, "missing_mobile_instructions");
+        res.status(502).json({ error: "Paynow did not provide mobile payment instructions" });
         return;
       }
 
@@ -149,11 +188,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       res.status(201).json({
         reference,
         orderNumber: createdOrder.orderNumber,
-        redirectUrl: response.redirectUrl,
+        redirectUrl: response.redirectUrl ?? null,
         pollUrl: response.pollUrl,
         amount: totals.amount,
-        instructions: null,
-        mode: "redirect",
+        instructions: response.instructions ?? null,
+        mode,
       });
     } catch {
       await safeMarkPaymentFailed(reference, "paynow_request_failed");

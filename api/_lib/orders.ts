@@ -215,3 +215,33 @@ export async function getOrderByReference(reference: string): Promise<{ orderNum
     amount: Number(payment.amount ?? 0),
   };
 }
+
+export async function getPaynowPaymentContextByReference(reference: string): Promise<{
+  orderNumber: string | null;
+  amount: number | null;
+  pollUrl: string | null;
+}> {
+  const admin = getAdminClient();
+
+  const { data: payment } = await admin
+    .from("order_payments")
+    .select("amount, order_id, poll_url")
+    .eq("reference", reference)
+    .maybeSingle();
+
+  if (!payment) {
+    return { orderNumber: null, amount: null, pollUrl: null };
+  }
+
+  const { data: order } = await admin
+    .from("orders")
+    .select("order_number")
+    .eq("id", payment.order_id)
+    .maybeSingle();
+
+  return {
+    orderNumber: order?.order_number ?? null,
+    amount: Number(payment.amount ?? 0),
+    pollUrl: payment.poll_url ? String(payment.poll_url) : null,
+  };
+}

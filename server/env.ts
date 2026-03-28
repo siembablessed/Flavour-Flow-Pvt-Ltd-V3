@@ -24,6 +24,10 @@ const configuredOrigins = parsed.data.PAYNOW_ALLOWED_ORIGINS
   ? parsed.data.PAYNOW_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
   : [parsed.data.FRONTEND_URL];
 
+if (parsed.data.NODE_ENV === "development") {
+  configuredOrigins.push("http://localhost:8080", "http://localhost:8082");
+}
+
 export const env = {
   ...parsed.data,
   allowedOrigins: Array.from(new Set(configuredOrigins)),

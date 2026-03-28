@@ -12,11 +12,24 @@ const PaymentComplete = () => {
   const [orderNumber, setOrderNumber] = useState<string>("");
   const [error, setError] = useState<string>("");
 
+  const [mobileInstructions, setMobileInstructions] = useState<string>("");
+
   useEffect(() => {
     if (!reference) {
       setLoading(false);
       setError("Missing payment reference");
       return;
+    }
+
+    try {
+      const key = `paynow_instructions_${reference}`;
+      const stored = sessionStorage.getItem(key);
+      if (stored) {
+        setMobileInstructions(stored);
+        sessionStorage.removeItem(key);
+      }
+    } catch {
+      // ignore
     }
 
     let active = true;
@@ -56,6 +69,13 @@ const PaymentComplete = () => {
     <main className="min-h-screen bg-background px-4 py-16">
       <div className="mx-auto max-w-xl rounded-2xl border border-border bg-card p-8 shadow-sm">
         <h1 className="text-2xl font-bold">Payment Status</h1>
+
+        {mobileInstructions ? (
+          <div className="mt-6 rounded-lg border border-border bg-muted/50 p-4 text-sm text-foreground/80">
+            <p className="font-semibold text-foreground mb-2">Mobile money instructions</p>
+            <p className="whitespace-pre-wrap">{mobileInstructions}</p>
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="mt-6 flex items-center gap-3 text-foreground/70">

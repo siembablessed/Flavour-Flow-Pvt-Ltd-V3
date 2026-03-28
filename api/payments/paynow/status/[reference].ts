@@ -2,7 +2,7 @@ import type { ApiRequest, ApiResponse } from "../../../_lib/httpTypes.js";
 import { Paynow } from "paynow";
 import { clearStateCookie, readStateFromCookie } from "../../../_lib/state.js";
 import { getEnv } from "../../../_lib/env.js";
-import { getOrderByReference, syncPaymentStatus } from "../../../_lib/orders.js";
+import { getPaynowPaymentContextByReference, syncPaymentStatus } from "../../../_lib/orders.js";
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Cache-Control", "no-store");
@@ -37,34 +37,54 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const cookieHeader = Array.isArray(req.headers.cookie) ? req.headers.cookie.join("; ") : req.headers.cookie;
   const state = readStateFromCookie(cookieHeader, env.PAYNOW_COOKIE_SECRET);
-  if (!state || state.reference !== reference) {
-    const fallback = await getOrderByReference(reference);
+
+  let pollUrl: string | null = null;
+  let cookieOrderNumber: string | undefined;
+  let cookieAmount: number | undefined;
+
+  if (state && state.reference === reference) {
+    pollUrl = state.pollUrl;
+    cookieOrderNumber = state.orderNumber;
+    cookieAmount = state.amount;
+  } else {
+    const fallback = await getPaynowPaymentContextByReference(reference);
     if (!fallback.orderNumber) {
       res.status(404).json({ error: "Payment state not found" });
       return;
     }
 
-    res.status(409).json({ error: "Payment session expired. Please refresh your order status." });
-    return;
+    if (!fallback.pollUrl) {
+      res.status(409).json({ error: "Payment session expired. Please refresh your order status." });
+      return;
+    }
+
+    pollUrl = fallback.pollUrl;
+    cookieOrderNumber = fallback.orderNumber ?? undefined;
+    cookieAmount = fallback.amount ?? undefined;
   }
 
   try {
-    const paynow = new Paynow(env.PAYNOW_INTEGRATION_ID, env.PAYNOW_INTEGRATION_KEY, env.PAYNOW_RESULT_URL, env.PAYNOW_RETURN_URL);
-    console.log("[Paynow Status] Polling transaction from:", state.pollUrl);
-    const poll = await paynow.pollTransaction(state.pollUrl);
+    const paynow = new Paynow(
+      String(env.PAYNOW_INTEGRATION_ID),
+      env.PAYNOW_INTEGRATION_KEY,
+      env.PAYNOW_RESULT_URL,
+      env.PAYNOW_RETURN_URL,
+    );
+    console.log("[Paynow Status] Polling transaction from:", pollUrl);
+    const poll = await paynow.pollTransaction(pollUrl);
     console.log("[Paynow Status] Poll response:", JSON.stringify(poll));
     const providerStatus = String(poll?.status ?? "unknown");
 
     const sync = await syncPaymentStatus(reference, providerStatus);
 
-    if (sync.paid) {
+    if (sync.paid && state && state.reference === reference) {
       res.setHeader("Set-Cookie", clearStateCookie());
     }
 
     res.status(200).json({
       reference,
-      orderNumber: sync.orderNumber ?? state.orderNumber,
-      amount: sync.amount ?? state.amount,
+      orderNumber: sync.orderNumber ?? cookieOrderNumber ?? null,
+      amount: Number(sync.amount ?? cookieAmount ?? 0),
       status: sync.status,
       paid: sync.paid,
     });
