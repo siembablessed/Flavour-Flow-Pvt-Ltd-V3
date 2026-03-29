@@ -104,10 +104,9 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Paynow Merchant Email (Test Mode)"
+                placeholder="Customer Email Address"
                 className="w-full text-sm px-3 py-2 rounded-md border border-border bg-background outline-none focus:border-primary/50"
               />
-              <p className="text-[10px] text-foreground/50 mt-1">In test mode, this must be your registered Paynow email.</p>
             </div>
 
             <div>
