@@ -6,7 +6,8 @@ export interface CheckoutLine {
 export interface InitiatePaynowRequest {
   email?: string;
   phone?: string;
-  method?: "ecocash" | "onemoney" | "visa";
+  token?: string;
+  method?: "ecocash" | "onemoney" | "zimswitch" | "innbucks" | "omari" | "vmc";
   userId?: string;
   items: CheckoutLine[];
 }
@@ -19,6 +20,14 @@ export interface InitiatePaynowResponse {
   amount: number;
   instructions: string | null;
   mode: "redirect" | "mobile";
+  // O'mari two-step OTP flow
+  omariOtpReference: string | null;
+  omariRemoteOtpUrl: string | null;
+  // InnBucks authorization code
+  innbucksCode: string | null;
+  innbucksDeepLink: string | null;
+  innbucksQr: string | null;
+  innbucksExpiresAt: string | null;
 }
 
 export interface PaynowStatusResponse {

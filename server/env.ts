@@ -9,6 +9,7 @@ const envSchema = z.object({
   PAYNOW_RETURN_URL: z.string().url(),
   FRONTEND_URL: z.string().url(),
   PAYNOW_ALLOWED_ORIGINS: z.string().optional(),
+  ADMIN_EMAILS: z.string().optional(),
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 });
@@ -25,7 +26,9 @@ const configuredOrigins = parsed.data.PAYNOW_ALLOWED_ORIGINS
   : [parsed.data.FRONTEND_URL];
 
 if (parsed.data.NODE_ENV === "development") {
-  configuredOrigins.push("http://localhost:8080", "http://localhost:8082");
+  for (let port = 8080; port <= 8085; port += 1) {
+    configuredOrigins.push(`http://localhost:${port}`);
+  }
 }
 
 export const env = {

@@ -10,6 +10,7 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   FRONTEND_URL: z.string().url(),
   PAYNOW_ALLOWED_ORIGINS: z.string().optional(),
+  ADMIN_EMAILS: z.string().optional(),
   ANON_CART_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(6),
 });
 

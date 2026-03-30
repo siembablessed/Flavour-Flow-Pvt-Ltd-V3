@@ -5,14 +5,22 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { Paynow } from "paynow";
 import { z } from "zod";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "./env";
 import { calculateCheckoutTotals } from "./catalog";
+import { AdminAccessError, loadAdminDashboard } from "../shared/adminDashboard";
+import {
+  AdminInventoryError,
+  loadAdminInventoryMovements,
+  recordAdminInventoryMovement,
+  updateAdminReorderLevel,
+} from "../shared/adminInventory";
 
-// Supabase admin client for server-side writes (bypasses RLS)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _adminDb: any = null;
-function getAdminDb(): any {
+// ---------------------------------------------------------------------------
+// Supabase admin client (bypasses RLS)
+// ---------------------------------------------------------------------------
+let _adminDb: SupabaseClient | null = null;
+function getAdminDb(): SupabaseClient {
   if (!_adminDb) {
     _adminDb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -21,6 +29,9 @@ function getAdminDb(): any {
   return _adminDb;
 }
 
+// ---------------------------------------------------------------------------
+// Validation schemas
+// ---------------------------------------------------------------------------
 const initiateSchema = z
   .object({
     email: z.string().email().optional(),
@@ -29,7 +40,11 @@ const initiateSchema = z
       .trim()
       .regex(/^[0-9+]{8,15}$/)
       .optional(),
-    method: z.enum(["ecocash", "onemoney", "visa"]).optional(),
+    // token is used by Zimswitch (32-char hex token) instead of a phone number
+    token: z.string().trim().min(1).max(64).optional(),
+    method: z
+      .enum(["ecocash", "onemoney", "zimswitch", "innbucks", "omari", "vmc"])
+      .optional(),
     userId: z.string().uuid().optional(),
     items: z
       .array(
@@ -42,22 +57,57 @@ const initiateSchema = z
       .max(200),
   })
   .superRefine((value, ctx) => {
-    if (value.method && value.method !== "visa" && !value.phone) {
+    // Methods that require a phone number
+    const PHONE_METHODS = ["ecocash", "onemoney", "omari", "innbucks"] as const;
+    // Methods that require a card / wallet token instead of a phone
+    const TOKEN_METHODS = ["zimswitch"] as const;
+
+    if (value.method && (PHONE_METHODS as readonly string[]).includes(value.method) && !value.phone) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["phone"],
         message: "Phone is required for mobile money payments",
       });
     }
+    if (value.method && (TOKEN_METHODS as readonly string[]).includes(value.method) && !value.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["token"],
+        message: "Token is required for this payment method",
+      });
+    }
   });
 
+const inventoryMovementSchema = z.object({
+  movementType: z.enum(["stock_in", "stock_out", "reserve", "release", "adjustment_plus", "adjustment_minus"]),
+  productId: z.string().trim().min(1).max(50),
+  locationCode: z.string().trim().min(1).max(50),
+  quantityCases: z.number().positive(),
+  note: z.string().trim().max(500).optional().nullable(),
+  referenceType: z.string().trim().max(100).optional().nullable(),
+  referenceId: z.string().trim().max(100).optional().nullable(),
+});
+
+const reorderLevelSchema = z.object({
+  productId: z.string().trim().min(1).max(50),
+  locationCode: z.string().trim().min(1).max(50),
+  reorderLevelCases: z.number().min(0),
+});
+
+// ---------------------------------------------------------------------------
+// Types & helpers
+// ---------------------------------------------------------------------------
 export type PaynowApiAppOptions = {
   enablePaymentStoreCleanup?: boolean;
 };
 
 function createPaynowClient(returnUrl: string): Paynow {
-  const client = new Paynow(String(env.PAYNOW_INTEGRATION_ID), env.PAYNOW_INTEGRATION_KEY, env.PAYNOW_RESULT_URL, returnUrl);
-  return client;
+  return new Paynow(
+    String(env.PAYNOW_INTEGRATION_ID),
+    env.PAYNOW_INTEGRATION_KEY,
+    env.PAYNOW_RESULT_URL,
+    returnUrl,
+  );
 }
 
 type PaymentState = {
@@ -91,6 +141,15 @@ function isPaidStatus(status: string | undefined): boolean {
   return normalized === "paid" || normalized === "awaiting delivery";
 }
 
+// ---------------------------------------------------------------------------
+// Dispatch helper — decides which Paynow method to call
+// ---------------------------------------------------------------------------
+const PHONE_METHODS = ["ecocash", "onemoney", "omari", "innbucks"];
+const TOKEN_METHODS = ["zimswitch"];
+
+// ---------------------------------------------------------------------------
+// App factory
+// ---------------------------------------------------------------------------
 export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
   const { enablePaymentStoreCleanup = true } = options;
 
@@ -114,6 +173,7 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
     }),
   );
 
+  // Paynow callback must receive raw body BEFORE express.json() middleware
   app.post(
     "/api/payments/paynow/callback",
     express.raw({
@@ -211,10 +271,118 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
 
   app.use(baseLimiter);
 
+  // ── Health ──────────────────────────────────────────────────────────────
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });
 
+  // ── Admin: Dashboard ────────────────────────────────────────────────────
+  app.get("/api/admin/dashboard", async (req, res) => {
+    try {
+      const payload = await loadAdminDashboard({
+        supabaseUrl: env.SUPABASE_URL,
+        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+        adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+        authorizationHeader: req.headers.authorization,
+      });
+
+      res.json(payload);
+    } catch (error) {
+      if (error instanceof AdminAccessError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to load admin dashboard";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── Admin: Inventory movements ──────────────────────────────────────────
+  app.get("/api/admin/inventory/movements", async (req, res) => {
+    try {
+      const payload = await loadAdminInventoryMovements({
+        supabaseUrl: env.SUPABASE_URL,
+        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+        adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+        authorizationHeader: req.headers.authorization,
+      });
+
+      res.json({ movements: payload });
+    } catch (error) {
+      if (error instanceof AdminInventoryError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to load inventory movements";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/admin/inventory/movements", async (req, res) => {
+    const parsed = inventoryMovementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Invalid inventory movement payload",
+        details: parsed.error.flatten().fieldErrors,
+      });
+      return;
+    }
+
+    try {
+      const result = await recordAdminInventoryMovement(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        parsed.data,
+      );
+
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof AdminInventoryError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to record inventory movement";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/admin/inventory/reorder-level", async (req, res) => {
+    const parsed = reorderLevelSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Invalid reorder level payload",
+        details: parsed.error.flatten().fieldErrors,
+      });
+      return;
+    }
+
+    try {
+      const result = await updateAdminReorderLevel(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        parsed.data,
+      );
+
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof AdminInventoryError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to update reorder level";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── Payments: Initiate ──────────────────────────────────────────────────
   app.post("/api/payments/paynow/initiate", checkoutLimiter, async (req, res) => {
     const parsed = initiateSchema.safeParse(req.body);
 
@@ -226,7 +394,7 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
       return;
     }
 
-    const { items, email, phone, method, userId } = parsed.data;
+    const { items, email, phone, token, method, userId } = parsed.data;
 
     let totals;
     try {
@@ -247,8 +415,19 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
       const payment = paynow.createPayment(reference, payerEmail);
       payment.add(totals.description, totals.amount);
 
-      const response =
-        method && method !== "visa" ? await paynow.sendMobile(payment, String(phone ?? ""), method) : await paynow.send(payment);
+      let response;
+      if (method && PHONE_METHODS.includes(method)) {
+        // EcoCash, OneMoney, Omari, InnBucks — push USSD to phone
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        response = await paynow.sendMobile(payment, String(phone ?? ""), method as any);
+      } else if (method && TOKEN_METHODS.includes(method)) {
+        // Zimswitch — send 32-char card token in the "phone" field per Paynow API docs
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        response = await paynow.sendMobile(payment, String(token ?? ""), method as any);
+      } else {
+        // VMC (Visa/Mastercard) and default — web redirect; Paynow hosts the card form
+        response = await paynow.send(payment);
+      }
 
       console.log(
         "[Paynow Initiate] init response",
@@ -348,6 +527,7 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
     }
   });
 
+  // ── Payments: Poll status ───────────────────────────────────────────────
   app.get("/api/payments/paynow/status/:reference", async (req, res) => {
     const reference = req.params.reference?.trim();
     if (!reference) {
@@ -388,6 +568,7 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
     });
   });
 
+  // ── 404 catch-all ───────────────────────────────────────────────────────
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });
   });
