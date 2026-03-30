@@ -11,7 +11,6 @@ values
   ('Gin', 'gin'),
   ('Rum', 'rum'),
   ('Spirit Cooler', 'spirit-cooler'),
-  ('Test', 'test'),
   ('Vodka', 'vodka'),
   ('Whisky', 'whisky'),
   ('Wine', 'wine')
@@ -21,9 +20,6 @@ set name = excluded.name,
 
 with incoming(product_id, category_name, name, pack, code, case_price, unit_price, unit_price_vat) as (
 values
-  ('t1', 'Test', 'Test Product ($1)', '1 x 1', 'T001', 1.00, 1.00, 1.00),
-  ('t2', 'Test', 'Test Product ($2)', '1 x 1', 'T002', 2.00, 2.00, 2.00),
-  ('t3', 'Test', 'Test Product ($30)', '1 x 1', 'T030', 30.00, 30.00, 30.00),
   ('w1', 'Whisky', 'Whisky', '12 x 750ml', '9680', 37.44, 3.12, 3.60),
   ('w2', 'Whisky', 'Whisky', '24 x 200ml', '9519', 25.20, 1.05, 1.21),
   ('w3', 'Whisky', 'Whisky', '12 x 750ml PET', '9690', 28.68, 2.39, 2.76),

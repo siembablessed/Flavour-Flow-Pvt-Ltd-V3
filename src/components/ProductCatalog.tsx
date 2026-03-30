@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, SlidersHorizontal, Truck, Package, Shield, Star, Heart } from "lucide-react";
+import { Plus, SlidersHorizontal, Truck, Package, Shield, DollarSign, Heart } from "lucide-react";
 import { Product } from "@/data/products";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
@@ -79,6 +79,27 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
   const [visible, setVisible] = useState(false);
   const categories = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
 
+  // ── Price filter ──────────────────────────────────────────────────────────
+  type PriceRange = "all" | "under25" | "25to50" | "50to75" | "over75";
+  const [priceRange, setPriceRange] = useState<PriceRange>("all");
+
+  const priceBrackets: { id: PriceRange; label: string }[] = [
+    { id: "all",     label: "Any Price" },
+    { id: "under25", label: "Under $25" },
+    { id: "25to50",  label: "$25 – $50" },
+    { id: "50to75",  label: "$50 – $75" },
+    { id: "over75",  label: "Over $75"  },
+  ];
+
+  function inPriceRange(casePrice: number, range: PriceRange): boolean {
+    if (range === "all")     return true;
+    if (range === "under25") return casePrice < 25;
+    if (range === "25to50") return casePrice >= 25 && casePrice <= 50;
+    if (range === "50to75") return casePrice > 50 && casePrice <= 75;
+    if (range === "over75") return casePrice > 75;
+    return true;
+  }
+
   useEffect(() => {
     const obs = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) setVisible(true); },
@@ -89,10 +110,11 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
   }, []);
 
   const filtered = products.filter((p) => {
-    const matchCat = activeCategory === "All" || p.category === activeCategory;
+    const matchCat    = activeCategory === "All" || p.category === activeCategory;
     const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchSaved = !savedOnly || savedSet.has(p.id);
-    return matchCat && matchSearch && matchSaved;
+    const matchSaved  = !savedOnly || savedSet.has(p.id);
+    const matchPrice  = inPriceRange(p.casePrice, priceRange);
+    return matchCat && matchSearch && matchSaved && matchPrice;
   });
 
   const handleAdd = (product: Product) => {
@@ -133,7 +155,8 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {/* ── Category chips ── */}
+          <div className="flex flex-wrap items-center gap-2 no-scrollbar">
             <SlidersHorizontal className="w-4 h-4 text-foreground/30 flex-shrink-0" />
             {categories.map((cat) => (
               <button
@@ -161,6 +184,25 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
                 Saved Only
               </button>
             )}
+          </div>
+
+          {/* ── Price filter chips ── */}
+          <div className="flex flex-wrap items-center gap-2 no-scrollbar mt-2">
+            <DollarSign className="w-4 h-4 text-foreground/30 flex-shrink-0" />
+            {priceBrackets.map((bracket) => (
+              <button
+                key={bracket.id}
+                onClick={() => setPriceRange(bracket.id)}
+                className={`px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-200 active:scale-95 ${
+                  priceRange === bracket.id
+                    ? "bg-accent text-white shadow-sm"
+                    : "bg-card border border-border hover:border-primary/30"
+                }`}
+                style={priceRange !== bracket.id ? { color: '#1B3674' } : undefined}
+              >
+                {bracket.label}
+              </button>
+            ))}
           </div>
         </div>
 

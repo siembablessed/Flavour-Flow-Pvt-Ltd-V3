@@ -83,6 +83,15 @@
   .navy-gradient {
     background: linear-gradient(135deg, hsl(222, 62%, 28%), hsl(222, 55%, 22%));
   }
+
+  /* Hide scrollbar while keeping scroll — overrides the global thin-scrollbar rule */
+  .no-scrollbar {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+  }
 }
 
 @keyframes fade-up {
