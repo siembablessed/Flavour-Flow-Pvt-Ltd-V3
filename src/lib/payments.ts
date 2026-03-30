@@ -87,3 +87,25 @@ export async function getPaynowStatus(reference: string): Promise<PaynowStatusRe
   });
   return parseApiResponse<PaynowStatusResponse>(response);
 }
+
+export interface OmariOtpRequest {
+  reference: string;
+  otp: string;
+}
+
+export interface OmariOtpResponse {
+  ok: boolean;
+  status: string;
+  paid: boolean;
+}
+
+export async function omariSubmitOtp(input: OmariOtpRequest): Promise<OmariOtpResponse> {
+  const response = await fetch("/api/payments/paynow/omari-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  return parseApiResponse<OmariOtpResponse>(response);
+}
+

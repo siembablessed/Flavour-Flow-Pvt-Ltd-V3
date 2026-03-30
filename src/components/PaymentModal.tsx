@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { X, CreditCard, Smartphone, ShieldCheck, Lock, WifiOff } from "lucide-react";
+import { X, CreditCard, Smartphone, ShieldCheck, Lock, WifiOff, KeyRound, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { initiatePaynowPayment, type CheckoutLine } from "@/lib/payments";
+import { initiatePaynowPayment, omariSubmitOtp, type CheckoutLine } from "@/lib/payments";
 import { useAuth } from "@/context/AuthContext";
 
 interface PaymentModalProps {
@@ -140,6 +140,21 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
   const [cvv, setCvv] = useState("");
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
 
+  // O'mari 2-step OTP state
+  const [omariStep, setOmariStep] = useState<"idle" | "otp">("idle");
+  const [omariReference, setOmariReference] = useState("");
+  const [omariOtp, setOmariOtp] = useState("");
+  const [omariSubmitting, setOmariSubmitting] = useState(false);
+
+  // Shared reference for status-check redirect (O'mari + InnBucks)
+  const [pendingReference, setPendingReference] = useState("");
+
+  // InnBucks auth code state
+  const [innbucksInfo, setInnbucksInfo] = useState<{
+    code: string; deepLink: string; qr: string; expiresAt: string;
+  } | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
+
   // Reset all input state on close
   useEffect(() => {
     if (!open) {
@@ -151,17 +166,28 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
       setExpiry("");
       setCvv("");
       setCardErrors({});
+      setOmariStep("idle");
+      setOmariReference("");
+      setOmariOtp("");
+      setPendingReference("");
+      setInnbucksInfo(null);
+      setCodeCopied(false);
     }
   }, [open]);
 
-  // Reset inputs when method changes
   const handleMethodChange = (m: Method) => {
     const cfg = METHODS.find((x) => x.id === m);
-    if (!cfg?.available) return; // block unavailable methods
+    if (!cfg?.available) return;
     setMethod(m);
     setPhone("");
     setToken("");
     setCardErrors({});
+    setOmariStep("idle");
+    setOmariReference("");
+    setOmariOtp("");
+    setPendingReference("");
+    setInnbucksInfo(null);
+    setCodeCopied(false);
   };
 
   const cardBrand = detectCardBrand(cardNumber);
@@ -206,6 +232,7 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
 
       const payment = await initiatePaynowPayment(payload);
 
+      // ── Web redirect (Paynow / VMC) ─────────────────────────────────────
       if (payment.mode === "redirect") {
         if (!payment.redirectUrl) throw new Error("Paynow did not return a redirect URL");
         toast.success("Redirecting to Paynow…");
@@ -213,12 +240,40 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
         return;
       }
 
+      // ── O'mari — 2-step OTP ─────────────────────────────────────────────
+      if (method === "omari") {
+        if (payment.omariRemoteOtpUrl) {
+          setOmariReference(payment.reference);
+          setPendingReference(payment.reference);
+          setOmariStep("otp");
+          toast.success("OTP sent to your phone. Please enter it below.");
+        } else {
+          toast.success("Follow the instructions on your phone.");
+          window.location.assign(`/payment/complete?reference=${encodeURIComponent(payment.reference)}`);
+        }
+        setProcessing(false);
+        return;
+      }
+
+      // ── InnBucks — show auth code ────────────────────────────────────────
+      if (method === "innbucks" && payment.innbucksCode) {
+        setPendingReference(payment.reference);
+        setInnbucksInfo({
+          code: payment.innbucksCode,
+          deepLink: payment.innbucksDeepLink ?? "",
+          qr: payment.innbucksQr ?? "",
+          expiresAt: payment.innbucksExpiresAt ?? "",
+        });
+        setProcessing(false);
+        return;
+      }
+
+      // ── Standard mobile (EcoCash, OneMoney, Zimswitch, InnBucks fallback) ─
       if (payment.mode === "mobile") {
-        if (!payment.instructions) throw new Error("Paynow did not return payment instructions");
         try {
           sessionStorage.setItem(
             `paynow_instructions_${payment.reference}`,
-            payment.instructions,
+            payment.instructions ?? "",
           );
         } catch { /* ignore quota / private mode */ }
         toast.success("Follow the instructions on your phone to complete payment.");
@@ -232,6 +287,27 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
       toast.error(error instanceof Error ? error.message : "Unable to initiate payment");
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleOmariOtp = async () => {
+    if (!omariOtp.trim()) { toast.error("Please enter the OTP"); return; }
+    setOmariSubmitting(true);
+    try {
+      const result = await omariSubmitOtp({ reference: omariReference, otp: omariOtp.trim() });
+      if (result.paid) {
+        toast.success("Payment confirmed! ✓");
+        window.location.assign(`/payment/complete?reference=${encodeURIComponent(omariReference)}`);
+      } else if (result.status?.toLowerCase() === "error") {
+        toast.error("OTP incorrect or expired. Please try again.");
+      } else {
+        toast.success("OTP accepted — awaiting payment confirmation.");
+        window.location.assign(`/payment/complete?reference=${encodeURIComponent(omariReference)}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "OTP submission failed");
+    } finally {
+      setOmariSubmitting(false);
     }
   };
 
@@ -392,31 +468,130 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
             </div>
           )}
 
+          {/* ── O'mari OTP step ── */}
+          {omariStep === "otp" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-200 rounded-xl border border-orange-500/30 bg-orange-500/5 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-orange-500 shrink-0" />
+                <p className="text-sm font-semibold text-orange-600 dark:text-orange-400">Enter your O'mari OTP</p>
+              </div>
+              <p className="text-[11px] text-foreground/50">
+                An OTP has been sent to your registered O'mari mobile number. Enter it below to confirm payment.
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={omariOtp}
+                onChange={(e) => setOmariOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                placeholder="e.g. 123456"
+                className="w-full text-sm px-3.5 py-2.5 rounded-lg border border-orange-400/50 bg-background outline-none focus:border-orange-500 transition-colors font-mono tracking-widest text-center"
+              />
+              <p className="text-[10px] text-foreground/35">
+                Note: 5 failed attempts will cancel the transaction.
+              </p>
+            </div>
+          )}
+
+          {/* ── InnBucks auth code panel ── */}
+          {innbucksInfo && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-200 rounded-xl border border-purple-500/30 bg-purple-500/5 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-purple-500 shrink-0" />
+                <p className="text-sm font-semibold text-purple-600 dark:text-purple-400">InnBucks Authorization Code</p>
+              </div>
+
+              {/* Code display + copy button */}
+              <div className="flex items-center gap-2 bg-background rounded-lg border border-purple-400/30 px-3 py-3">
+                <span className="flex-1 font-mono text-lg font-bold tracking-wider text-foreground break-all select-all">
+                  {innbucksInfo.code}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(innbucksInfo.code).then(() => {
+                      setCodeCopied(true);
+                      setTimeout(() => setCodeCopied(false), 2000);
+                    });
+                  }}
+                  className="shrink-0 px-2.5 py-1.5 rounded-md border border-purple-400/40 bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[11px] font-semibold hover:bg-purple-500/20 transition-colors"
+                >
+                  {codeCopied ? "Copied ✓" : "Copy"}
+                </button>
+              </div>
+
+              {innbucksInfo.expiresAt && (
+                <p className="text-[11px] text-foreground/40 text-center">Expires: {innbucksInfo.expiresAt}</p>
+              )}
+              <p className="text-[11px] text-foreground/50 text-center">
+                Open the InnBucks app, tap <strong>Pay</strong>, and enter or scan this code to authorize payment.
+              </p>
+              {innbucksInfo.deepLink && (
+                <a
+                  href={innbucksInfo.deepLink}
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg border border-purple-500/40 bg-purple-500/10 text-purple-600 dark:text-purple-400 text-sm font-semibold hover:bg-purple-500/15 transition-colors"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Open in InnBucks App
+                </a>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* ── Footer / Pay button ── */}
         <div className="px-5 py-4 border-t border-border shrink-0">
-          <button
-            onClick={() => void handlePay()}
-            disabled={processing || !activeConfig.available}
-            className="w-full py-3.5 rounded-xl brand-gradient text-white font-semibold text-sm
-              hover:opacity-90 transition-[opacity,transform] active:scale-[0.98]
-              disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-primary/15"
-          >
-            {processing ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-                Processing…
-              </span>
-            ) : activeConfig.available ? (
-              `Pay $${total.toFixed(2)} via ${activeConfig.label}`
-            ) : (
-              "Method Unavailable"
-            )}
-          </button>
+          {omariStep === "otp" ? (
+            // O'mari OTP submit button
+            <button
+              onClick={() => void handleOmariOtp()}
+              disabled={omariSubmitting || omariOtp.length < 4}
+              className="w-full py-3.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold text-sm
+                transition-[opacity,transform] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed shadow-md"
+            >
+              {omariSubmitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  Verifying OTP…
+                </span>
+              ) : "Confirm Payment"}
+            </button>
+          ) : innbucksInfo ? (
+            // InnBucks — waiting for user to approve in-app
+            <button
+              onClick={() => window.location.assign(`/payment/complete?reference=${encodeURIComponent(pendingReference)}`)}
+              className="w-full py-3.5 rounded-xl brand-gradient text-white font-semibold text-sm
+                hover:opacity-90 transition-[opacity,transform] active:scale-[0.98] shadow-md shadow-primary/15"
+            >
+              Check Payment Status
+            </button>
+          ) : (
+            // Normal pay button
+            <button
+              onClick={() => void handlePay()}
+              disabled={processing || !activeConfig.available}
+              className="w-full py-3.5 rounded-xl brand-gradient text-white font-semibold text-sm
+                hover:opacity-90 transition-[opacity,transform] active:scale-[0.98]
+                disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-primary/15"
+            >
+              {processing ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  Processing…
+                </span>
+              ) : activeConfig.available ? (
+                `Pay $${total.toFixed(2)} via ${activeConfig.label}`
+              ) : (
+                "Method Unavailable"
+              )}
+            </button>
+          )}
           <p className="text-[10px] text-foreground/30 text-center mt-2.5 flex items-center justify-center gap-1">
             <ShieldCheck className="h-3 w-3" /> Secure payments powered by Paynow
           </p>

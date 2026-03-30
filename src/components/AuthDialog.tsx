@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { supabase } from "@/lib/supabase";
+import { getSiteUrl, supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -33,7 +33,13 @@ export function AuthDialog({ open, onOpenChange }: { open: boolean, onOpenChange
         toast.success("Successfully logged in!");
         onOpenChange(false);
       } else {
-        const { error } = await supabase.auth.signUp({ email: normalizedEmail, password });
+        const { error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            emailRedirectTo: `${getSiteUrl()}/`,
+          },
+        });
         if (error) throw error;
         toast.success("Registration successful! You may need to verify your email.");
         onOpenChange(false);

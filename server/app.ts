@@ -118,6 +118,7 @@ type PaymentState = {
   paid: boolean;
   updatedAt: number;
   orderNumber: string;
+  omariRemoteOtpUrl?: string; // stored so the omari-otp endpoint can relay the OTP
 };
 
 const paymentStore = new Map<string, PaymentState>();
@@ -336,7 +337,8 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
           adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
           authorizationHeader: req.headers.authorization,
         },
-        parsed.data,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        parsed.data as any,
       );
 
       res.status(201).json(result);
@@ -368,7 +370,8 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
           adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
           authorizationHeader: req.headers.authorization,
         },
-        parsed.data,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        parsed.data as any,
       );
 
       res.status(200).json(result);
@@ -429,6 +432,8 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
         response = await paynow.send(payment);
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawForLog = response as any;
       console.log(
         "[Paynow Initiate] init response",
         JSON.stringify({
@@ -438,6 +443,9 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
           hasPollUrl: Boolean(response?.pollUrl),
           hasRedirectUrl: Boolean(response?.redirectUrl),
           hasInstructions: Boolean(response?.instructions),
+          isInnbucks: rawForLog?.isInnbucks ?? false,
+          innbucksCode: rawForLog?.innbucks_info?.[0]?.authorizationcode ?? null,
+          innbucksExpires: rawForLog?.innbucks_info?.[0]?.expires_at ?? null,
           error: response?.error ?? null,
         }),
       );
@@ -454,7 +462,18 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
         return;
       }
 
-      if (mode === "mobile" && !response.instructions) {
+      // InnBucks and O'mari have non-standard responses — only EcoCash/OneMoney send `instructions`
+      // Omari triggers an SMS OTP; InnBucks uses an auth code. Neither has a USSD instructions string.
+      const isInnbucks = response.isInnbucks === true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawRes = response as any;
+      const isOmari = method === "omari";
+      const omariOtpReference: string | null = isOmari ? (rawRes.otpreference ?? null) : null;
+      const omariRemoteOtpUrl: string | null = isOmari ? (rawRes.remoteotpurl ?? null) : null;
+
+      // Only block if it's a plain mobile method that MUST have instructions (EcoCash / OneMoney / Zimswitch)
+      const requiresInstructions = ["ecocash", "onemoney", "zimswitch"].includes(method ?? "");
+      if (mode === "mobile" && requiresInstructions && !response.instructions) {
         res.status(502).json({ error: "Paynow did not provide mobile payment instructions" });
         return;
       }
@@ -467,6 +486,7 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
         paid: false,
         updatedAt: Date.now(),
         orderNumber: reference,
+        ...(omariRemoteOtpUrl && { omariRemoteOtpUrl }),
       });
 
       // Persist to Supabase asynchronously (don't block the response)
@@ -511,6 +531,11 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
         }
       })();
 
+      // InnBucks info
+      const innbucksInfo = isInnbucks && response.innbucks_info?.length
+        ? response.innbucks_info[0]
+        : null;
+
       res.status(201).json({
         reference,
         orderNumber: reference,
@@ -519,6 +544,14 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
         amount: totals.amount,
         instructions: response.instructions ?? null,
         mode,
+        // O'mari OTP fields
+        omariOtpReference,
+        omariRemoteOtpUrl,
+        // InnBucks auth code fields
+        innbucksCode: innbucksInfo?.authorizationcode ?? null,
+        innbucksDeepLink: innbucksInfo?.deep_link_url ?? null,
+        innbucksQr: innbucksInfo?.qr_code ?? null,
+        innbucksExpiresAt: innbucksInfo?.expires_at ?? null,
       });
     } catch (error) {
       console.error("Paynow initiate error:", error);
@@ -566,6 +599,91 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
       status: updated.status,
       paid: updated.paid,
     });
+  });
+
+  // ── Payments: O'mari OTP completion ────────────────────────────────────
+  app.post("/api/payments/paynow/omari-otp", checkoutLimiter, async (req, res) => {
+    const { reference, otp } = req.body as { reference?: string; otp?: string };
+
+    if (!reference || !otp) {
+      res.status(400).json({ error: "reference and otp are required" });
+      return;
+    }
+
+    const state = paymentStore.get(reference.trim());
+    if (!state) {
+      res.status(404).json({ error: "Payment not found" });
+      return;
+    }
+
+    if (!state.omariRemoteOtpUrl) {
+      res.status(400).json({ error: "No O'mari OTP URL stored for this payment" });
+      return;
+    }
+
+    try {
+      // Build the hash for the OTP submission per Paynow docs.
+      // generateHash and parseQuery exist on the class at runtime but are not in the public TS type.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const paynowAny = createPaynowClient(env.PAYNOW_RETURN_URL) as any;
+      const hashValues: Record<string, string> = {
+        id: String(env.PAYNOW_INTEGRATION_ID),
+        otp: otp.trim(),
+        status: "Message",
+      };
+      hashValues.hash = paynowAny.generateHash(hashValues, env.PAYNOW_INTEGRATION_KEY);
+
+      const body = new URLSearchParams(hashValues).toString();
+
+      const otpResponse = await fetch(state.omariRemoteOtpUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+
+      const raw = await otpResponse.text();
+      console.log("[Omari OTP] raw response:", raw);
+
+      // Parse the URL-encoded response
+      const parsed = paynowAny.parseQuery(raw) as Record<string, string>;
+      const status = (parsed.status ?? "").toLowerCase();
+
+      if (status === "error") {
+        res.status(400).json({ ok: false, status: "error", paid: false, error: parsed.error ?? "OTP failed" });
+        return;
+      }
+
+      const paid = isPaidStatus(parsed.status);
+      paymentStore.set(reference, { ...state, status: parsed.status, paid, updatedAt: Date.now() });
+
+      // Update Supabase
+      void (async () => {
+        try {
+          const db = getAdminDb();
+          await db
+            .from("order_payments")
+            .update({
+              status: paid ? "paid" : "sent",
+              provider_status: parsed.status,
+              ...(paid && { paid_at: new Date().toISOString() }),
+            })
+            .eq("reference", reference);
+          if (paid) {
+            await db
+              .from("orders")
+              .update({ status: "paid", paid_at: new Date().toISOString() })
+              .eq("payment_reference", reference);
+          }
+        } catch (dbErr) {
+          console.error("[DB] Omari OTP DB update error:", dbErr);
+        }
+      })();
+
+      res.json({ ok: true, status: parsed.status, paid });
+    } catch (error) {
+      console.error("[Omari OTP] error:", error);
+      res.status(502).json({ error: error instanceof Error ? error.message : "OTP submission failed" });
+    }
   });
 
   // ── 404 catch-all ───────────────────────────────────────────────────────
