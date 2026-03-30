@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { ShoppingCart, Menu, X, Search, LogOut, ChevronDown, Settings, UserCircle2 } from "lucide-react";
+import { ShoppingCart, Menu, X, Search, LogOut, ChevronDown, Settings, UserCircle2, Receipt } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { AuthDialog } from "./AuthDialog";
+import { PaymentHistory } from "./PaymentHistory";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +27,7 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
   const { user, signOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [localSearch, setLocalSearch] = useState(searchQuery);
 
   useEffect(() => {
@@ -112,6 +114,10 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
                   <DropdownMenuContent align="end" className="w-52">
                     <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+                      <Receipt className="mr-2 h-4 w-4" />
+                      Payment History
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => toast.info("Settings panel coming next.")}>
                       <Settings className="mr-2 h-4 w-4" />
                       Settings
@@ -211,6 +217,16 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
+                      setHistoryOpen(true);
+                      setMobileOpen(false);
+                    }}
+                    className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 flex items-center justify-center gap-1"
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    History
+                  </button>
+                  <button
+                    onClick={() => {
                       toast.info("Settings panel coming next.");
                       setMobileOpen(false);
                     }}
@@ -234,6 +250,7 @@ const Navbar = ({ onNavigate, onCartOpen, searchQuery, onSearch }: NavbarProps) 
       </div>
 
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
+      <PaymentHistory open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </nav>
   );
 };

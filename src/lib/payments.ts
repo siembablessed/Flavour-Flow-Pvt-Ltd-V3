@@ -7,6 +7,7 @@ export interface InitiatePaynowRequest {
   email?: string;
   phone?: string;
   method?: "ecocash" | "onemoney" | "visa";
+  userId?: string;
   items: CheckoutLine[];
 }
 

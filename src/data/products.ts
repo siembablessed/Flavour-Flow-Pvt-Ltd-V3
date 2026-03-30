@@ -11,6 +11,7 @@ export interface Product {
 
 export const categories = [
   "All",
+  "Test",
   "Whisky",
   "Brandy",
   "Rum",
@@ -23,6 +24,9 @@ export const categories = [
 ] as const;
 
 export const products: Product[] = [
+  // TEST
+  { id: "t1", name: "Test Product ($1)", category: "Test", pack: "1 x 1", code: "T001", casePrice: 1.00, unitPrice: 1.00, unitPriceVat: 1.00 },
+  { id: "t2", name: "Test Product ($2)", category: "Test", pack: "1 x 1", code: "T002", casePrice: 2.00, unitPrice: 2.00, unitPriceVat: 2.00 },
   // WHISKY
   { id: "w1", name: "Whisky", category: "Whisky", pack: "12 x 750ml", code: "9680", casePrice: 37.44, unitPrice: 3.12, unitPriceVat: 3.60 },
   { id: "w2", name: "Whisky", category: "Whisky", pack: "24 x 200ml", code: "9519", casePrice: 25.20, unitPrice: 1.05, unitPriceVat: 1.21 },

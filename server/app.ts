@@ -5,8 +5,21 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { Paynow } from "paynow";
 import { z } from "zod";
+import { createClient } from "@supabase/supabase-js";
 import { env } from "./env";
 import { calculateCheckoutTotals } from "./catalog";
+
+// Supabase admin client for server-side writes (bypasses RLS)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _adminDb: any = null;
+function getAdminDb(): any {
+  if (!_adminDb) {
+    _adminDb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return _adminDb;
+}
 
 const initiateSchema = z
   .object({
@@ -17,6 +30,7 @@ const initiateSchema = z
       .regex(/^[0-9+]{8,15}$/)
       .optional(),
     method: z.enum(["ecocash", "onemoney", "visa"]).optional(),
+    userId: z.string().uuid().optional(),
     items: z
       .array(
         z.object({
@@ -134,15 +148,45 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
       }
 
       const existing = paymentStore.get(reference);
+      const paidNow = isPaidStatus(providerStatus);
       paymentStore.set(reference, {
         reference,
         amount: existing?.amount ?? 0,
         pollUrl: existing?.pollUrl ?? "",
         status: providerStatus,
-        paid: isPaidStatus(providerStatus),
+        paid: paidNow,
         updatedAt: Date.now(),
         orderNumber: existing?.orderNumber ?? reference,
       });
+
+      // Update Supabase asynchronously
+      void (async () => {
+        try {
+          const db = getAdminDb();
+          const { error: payErr } = await db
+            .from("order_payments")
+            .update({
+              status: paidNow ? "paid" : "sent",
+              provider_status: providerStatus,
+              ...(paidNow && { paid_at: new Date().toISOString() }),
+            })
+            .eq("reference", reference);
+
+          if (payErr) {
+            console.error("[DB] Failed to update order_payment on callback:", payErr.message);
+            return;
+          }
+
+          if (paidNow) {
+            await db
+              .from("orders")
+              .update({ status: "paid", paid_at: new Date().toISOString() })
+              .eq("payment_reference", reference);
+          }
+        } catch (dbErr) {
+          console.error("[DB] Unexpected error on callback update:", dbErr);
+        }
+      })();
 
       res.status(200).json({ ok: true });
     },
@@ -182,11 +226,11 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
       return;
     }
 
-    const { items, email, phone, method } = parsed.data;
+    const { items, email, phone, method, userId } = parsed.data;
 
     let totals;
     try {
-      totals = await calculateCheckoutTotals(items);
+      totals = await calculateCheckoutTotals(items as import("./catalog").CartLineInput[]);
     } catch {
       res.status(400).json({ error: "Invalid cart items" });
       return;
@@ -245,6 +289,48 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
         updatedAt: Date.now(),
         orderNumber: reference,
       });
+
+      // Persist to Supabase asynchronously (don't block the response)
+      void (async () => {
+        try {
+          const db = getAdminDb();
+          const { data: order, error: orderErr } = await db
+            .from("orders")
+            .insert({
+              order_number: reference,
+              customer_email: email ?? null,
+              user_id: userId ?? null,
+              subtotal: totals.amount,
+              total: totals.amount,
+              status: "pending_payment",
+              payment_reference: reference,
+            })
+            .select("id")
+            .single();
+
+          if (orderErr || !order) {
+            console.error("[DB] Failed to insert order:", orderErr?.message);
+            return;
+          }
+
+          const { error: payErr } = await db.from("order_payments").insert({
+            order_id: order.id,
+            provider: "paynow",
+            payment_method: method ?? "redirect",
+            reference,
+            poll_url: response.pollUrl,
+            amount: totals.amount,
+            status: "sent",
+            provider_status: "sent",
+          });
+
+          if (payErr) {
+            console.error("[DB] Failed to insert order_payment:", payErr.message);
+          }
+        } catch (dbErr) {
+          console.error("[DB] Unexpected error persisting payment:", dbErr);
+        }
+      })();
 
       res.status(201).json({
         reference,

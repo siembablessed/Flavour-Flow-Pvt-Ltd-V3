@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { initiatePaynowPayment, type CheckoutLine } from "@/lib/payments";
+import { useAuth } from "@/context/AuthContext";
 
 interface PaymentModalProps {
   open: boolean;
@@ -10,11 +11,66 @@ interface PaymentModalProps {
   items: CheckoutLine[];
 }
 
+const MOBILE_MONEY_DELAY_MS = 60_000; // 1 minute
+
 const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
+  const { user } = useAuth();
   const [processing, setProcessing] = useState(false);
   const [email, setEmail] = useState("");
   const [method, setMethod] = useState<"redirect" | "ecocash" | "onemoney" | "visa">("redirect");
   const [phone, setPhone] = useState("");
+  const [showMobileOptions, setShowMobileOptions] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(60);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Pre-fill email from the logged-in user
+  useEffect(() => {
+    if (open && user?.email) {
+      setEmail(user.email);
+    }
+  }, [open, user]);
+
+  // Reset and start timers whenever the modal opens/closes
+  useEffect(() => {
+    if (!open) {
+      // Clean up when modal closes
+      setShowMobileOptions(false);
+      setSecondsLeft(60);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      return;
+    }
+
+    // Start countdown display
+    setSecondsLeft(60);
+    countdownRef.current = setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+
+    // Reveal mobile options after 1 minute
+    timerRef.current = setTimeout(() => {
+      setShowMobileOptions(true);
+    }, MOBILE_MONEY_DELAY_MS);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [open]);
+
+  // If mobile options get hidden again, reset method if it was mobile
+  useEffect(() => {
+    if (!showMobileOptions && (method === "ecocash" || method === "onemoney")) {
+      setMethod("redirect");
+    }
+  }, [showMobileOptions, method]);
 
   const handlePay = async () => {
     if (items.length === 0) {
@@ -38,6 +94,7 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
       const payload: Parameters<typeof initiatePaynowPayment>[0] = {
         items,
         email,
+        ...(user?.id && { userId: user.id }),
         ...(method !== "redirect" && { method }),
         ...((method === "ecocash" || method === "onemoney") && { phone }),
       };
@@ -113,15 +170,32 @@ const PaymentModal = ({ open, onClose, total, items }: PaymentModalProps) => {
               <label className="block text-xs font-semibold mb-1 text-foreground/80">Payment Method <span className="text-red-500">*</span></label>
               <select
                 value={method}
-                onChange={(e) => setMethod(e.target.value as any)}
+                onChange={(e) => setMethod(e.target.value as typeof method)}
                 className="w-full text-sm px-3 py-2 rounded-md border border-border bg-background outline-none focus:border-primary/50"
               >
                 <option value="redirect">Paynow Web Checkout (Default)</option>
-                <option value="ecocash">EcoCash Express</option>
-                <option value="onemoney">OneMoney</option>
+                {showMobileOptions && <option value="ecocash">EcoCash Express</option>}
+                {showMobileOptions && <option value="onemoney">OneMoney</option>}
                 <option value="visa">Visa/Mastercard</option>
               </select>
             </div>
+
+            {/* Mobile money fallback hint — shown after 1 minute */}
+            {showMobileOptions && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 animate-in fade-in slide-in-from-top-2">
+                <Clock className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
+                  Taking a while? Try <strong>EcoCash Express</strong> or <strong>OneMoney</strong> for instant mobile payment.
+                </p>
+              </div>
+            )}
+
+            {/* Subtle countdown hint before mobile options appear */}
+            {!showMobileOptions && secondsLeft < 60 && (
+              <p className="text-[11px] text-foreground/30 text-center">
+                Mobile money options available in {secondsLeft}s
+              </p>
+            )}
 
             {(method === "ecocash" || method === "onemoney") && (
               <div className="animate-in fade-in slide-in-from-top-2">

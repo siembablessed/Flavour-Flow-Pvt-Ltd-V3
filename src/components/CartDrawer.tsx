@@ -1,7 +1,9 @@
-import { X, Minus, Plus, Trash2 } from "lucide-react";
+import { X, Minus, Plus, Trash2, LogIn } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useState } from "react";
 import PaymentModal from "./PaymentModal";
+import { AuthDialog } from "./AuthDialog";
+import { useAuth } from "@/context/AuthContext";
 
 interface CartDrawerProps {
   open: boolean;
@@ -10,7 +12,17 @@ interface CartDrawerProps {
 
 const CartDrawer = ({ open, onClose }: CartDrawerProps) => {
   const { items, updateQuantity, removeItem, totalPrice, clearCart } = useCart();
+  const { user } = useAuth();
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+
+  const handleCheckout = () => {
+    if (!user) {
+      setAuthOpen(true);
+    } else {
+      setPaymentOpen(true);
+    }
+  };
 
   return (
     <>
@@ -47,14 +59,23 @@ const CartDrawer = ({ open, onClose }: CartDrawerProps) => {
                   <p className="text-sm font-bold mt-1 tabular-nums">${(item.product.casePrice * item.quantity).toFixed(2)}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => updateQuantity(item.product.id, item.quantity - 1)} className="p-1.5 rounded-md bg-card border border-border hover:bg-muted transition-colors active:scale-95">
+                  <button
+                    onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                    className="p-1.5 rounded-md bg-card border border-border hover:bg-muted transition-colors active:scale-95"
+                  >
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="text-sm font-semibold w-7 text-center tabular-nums">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.product.id, item.quantity + 1)} className="p-1.5 rounded-md bg-card border border-border hover:bg-muted transition-colors active:scale-95">
+                  <button
+                    onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                    className="p-1.5 rounded-md bg-card border border-border hover:bg-muted transition-colors active:scale-95"
+                  >
                     <Plus className="w-3 h-3" />
                   </button>
-                  <button onClick={() => removeItem(item.product.id)} className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 transition-colors active:scale-95 ml-1">
+                  <button
+                    onClick={() => removeItem(item.product.id)}
+                    className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 transition-colors active:scale-95 ml-1"
+                  >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
@@ -68,12 +89,22 @@ const CartDrawer = ({ open, onClose }: CartDrawerProps) => {
                 <span>Total</span>
                 <span className="tabular-nums">${totalPrice.toFixed(2)}</span>
               </div>
+
+              {!user && (
+                <p className="text-xs text-foreground/50 flex items-center gap-1.5">
+                  <LogIn className="w-3.5 h-3.5 shrink-0" />
+                  Sign in or create an account to proceed to payment.
+                </p>
+              )}
+
               <button
-                onClick={() => setPaymentOpen(true)}
-                className="w-full py-3.5 rounded-lg brand-gradient text-white font-semibold text-sm hover:opacity-90 transition-opacity active:scale-[0.97] shadow-md shadow-primary/15"
+                onClick={handleCheckout}
+                className="w-full py-3.5 rounded-lg brand-gradient text-white font-semibold text-sm hover:opacity-90 transition-opacity active:scale-[0.97] shadow-md shadow-primary/15 flex items-center justify-center gap-2"
               >
-                Proceed to Payment
+                {!user && <LogIn className="w-4 h-4" />}
+                {user ? "Proceed to Payment" : "Sign In to Pay"}
               </button>
+
               <button
                 onClick={clearCart}
                 className="w-full py-2.5 rounded-lg border border-border text-sm text-foreground/40 hover:bg-muted transition-colors active:scale-[0.97]"
@@ -85,6 +116,7 @@ const CartDrawer = ({ open, onClose }: CartDrawerProps) => {
         </div>
       </div>
 
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} />
       <PaymentModal
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
