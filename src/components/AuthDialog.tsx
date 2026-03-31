@@ -19,6 +19,12 @@ export function AuthDialog({ open, onOpenChange }: { open: boolean, onOpenChange
       return;
     }
 
+    // For normal site, allow any email
+    if (!normalizedEmail) {
+      toast.error("Please provide a valid email.");
+      return;
+    }
+
     if (password.length < 8) {
       toast.error("Password must be at least 8 characters.");
       return;
@@ -73,7 +79,7 @@ export function AuthDialog({ open, onOpenChange }: { open: boolean, onOpenChange
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-sm focus:ring-2 focus:ring-accent/50 outline-none"
-              placeholder="you@example.com"
+              placeholder="you@flavourflows.com"
             />
           </div>
           <div>

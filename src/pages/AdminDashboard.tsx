@@ -48,9 +48,15 @@ function statusBadgeClasses(status: string) {
   return "bg-rose-50 text-rose-700 border-rose-200";
 }
 
+const PAGE_SIZE = 10;
+
 const AdminDashboard = () => {
   const { session, loading: authLoading } = useAuth();
   const [productSearch, setProductSearch] = useState("");
+  const [productPage, setProductPage] = useState(0);
+  const [paymentPage, setPaymentPage] = useState(0);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+  const [inventoryPage, setInventoryPage] = useState(0);
 
   const {
     data: products = [],
@@ -174,7 +180,17 @@ const AdminDashboard = () => {
     ];
   }, [adminData?.summary.paidOrders, adminData?.summary.totalRevenue, inventory, locationSummary.length, products.length]);
 
-  const isBooting = authLoading || catalogLoading || inventoryLoading;
+  const filteredPayments = useMemo(() => {
+    if (!adminData?.payments) return [];
+    if (paymentStatusFilter === "all") return adminData.payments;
+    return adminData.payments.filter((payment) => {
+      const status = payment.paymentStatus.toLowerCase();
+      if (paymentStatusFilter === "paid") return status === "paid";
+      if (paymentStatusFilter === "pending") return status.includes("pending") || status === "sent" || status === "initiated";
+      if (paymentStatusFilter === "failed") return status === "failed" || status === "cancelled" || status === "expired";
+      return true;
+    });
+  }, [adminData?.payments, paymentStatusFilter]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -197,11 +213,13 @@ const AdminDashboard = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button asChild variant="secondary" className="border border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white">
-                <Link to="/">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to store
-                </Link>
+              <Button
+                onClick={() => window.location.reload()}
+                variant="secondary"
+                className="border border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Refresh page
               </Button>
               <Button
                 onClick={() => {
@@ -212,7 +230,7 @@ const AdminDashboard = () => {
                 className="brand-gradient text-white hover:opacity-95"
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Refresh admin data
+                Refresh data
               </Button>
             </div>
           </div>
@@ -242,7 +260,6 @@ const AdminDashboard = () => {
           <TabsList className="h-auto flex-wrap gap-2 rounded-2xl bg-muted/60 p-2">
             <TabsTrigger value="overview" className="rounded-xl px-4 py-2">Overview</TabsTrigger>
             <TabsTrigger value="catalogue" className="rounded-xl px-4 py-2">Catalogue</TabsTrigger>
-            <TabsTrigger value="inventory" className="rounded-xl px-4 py-2">Inventory</TabsTrigger>
             <TabsTrigger value="payments" className="rounded-xl px-4 py-2">Payments</TabsTrigger>
           </TabsList>
 
@@ -293,9 +310,14 @@ const AdminDashboard = () => {
 
               <Card className="overflow-hidden border-primary/10">
                 <CardContent className="p-0">
-                  <div className="border-b border-border bg-muted/30 px-6 py-4">
-                    <h2 className="text-xl font-bold text-foreground">Payments pulse</h2>
-                    <p className="text-sm text-foreground/55">Latest payment activity at a glance.</p>
+                  <div className="flex items-center justify-between border-b border-border bg-muted/30 px-6 py-4">
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground">Payments pulse</h2>
+                      <p className="text-sm text-foreground/55">Latest payment activity.</p>
+                    </div>
+                    <Button variant="ghost" size="sm" className="text-accent" onClick={() => document.querySelector('[data-value="payments"]')?.dispatchEvent(new MouseEvent('click', {bubbles: true}))}>
+                      View all →
+                    </Button>
                   </div>
 
                   <div className="space-y-3 p-6">
@@ -311,7 +333,7 @@ const AdminDashboard = () => {
                       <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
                         {(paymentsError as Error).message}
                       </div>
-                    ) : adminData?.payments.length ? adminData.payments.slice(0, 6).map((payment) => (
+                    ) : adminData?.payments.length ? adminData.payments.slice(0, 3).map((payment) => (
                       <div key={payment.id} className="rounded-2xl border border-border bg-card p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -336,51 +358,58 @@ const AdminDashboard = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="catalogue" className="space-y-6">
+          <TabsContent value="catalogue" className="space-y-4">
+            {/* Products - pending full rewrite */}
             <Card className="overflow-hidden border-primary/10">
               <CardContent className="p-0">
-                <div className="flex flex-col gap-4 border-b border-border bg-muted/30 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-3 border-b border-border bg-muted/30 px-6 py-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-xl font-bold text-foreground">Catalogue management</h2>
-                    <p className="text-sm text-foreground/55">Browse active product lines with pricing and stock health in one place.</p>
+                    <h2 className="text-lg font-bold text-foreground">Products</h2>
+                    <p className="text-xs text-foreground/55">Pricing, stock & locations.</p>
                   </div>
                   <input
                     value={productSearch}
-                    onChange={(event) => setProductSearch(event.target.value)}
+                    onChange={(event) => { setProductSearch(event.target.value); setProductPage(0); }}
                     placeholder="Search by name, code, or category"
-                    className="w-full rounded-full border border-border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/20 lg:max-w-sm"
+                    className="w-full rounded-full border border-border bg-background px-4 py-2 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/20 lg:max-w-sm"
                   />
                 </div>
-
+                <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-muted/20">
+                  <div className="text-sm text-foreground/60">
+                    {filteredProducts.length} items • Page {productPage + 1}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={productPage === 0} onClick={() => setProductPage(p => p - 1)}>Prev</Button>
+                    <Button variant="outline" size="sm" disabled={(productPage + 1) * PAGE_SIZE >= filteredProducts.length} onClick={() => setProductPage(p => p + 1)}>Next</Button>
+                  </div>
+                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Pricing</TableHead>
-                      <TableHead>Available</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="h-8">Product</TableHead>
+                      <TableHead className="h-8">Code</TableHead>
+                      <TableHead className="h-8">Pricing</TableHead>
+                      <TableHead className="h-8">Available</TableHead>
+                      <TableHead className="h-8">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredProducts.map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-semibold text-foreground">{product.name}</p>
-                            <p className="text-xs text-foreground/50">{product.category} • {product.pack}</p>
-                          </div>
+                    {filteredProducts.slice(productPage * PAGE_SIZE, (productPage + 1) * PAGE_SIZE).map((product) => (
+                      <TableRow key={product.id} className="h-10">
+                        <TableCell className="py-1">
+                          <p className="font-semibold">{product.name}</p>
+                          <p className="text-xs text-foreground/50">{product.category} • {product.pack}</p>
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-foreground/65">{product.code}</TableCell>
-                        <TableCell>
-                          <p className="font-semibold text-foreground">{formatCurrency(product.casePrice)}</p>
-                          <p className="text-xs text-foreground/50">{formatCurrency(product.unitPriceVat)}/unit incl. VAT</p>
+                        <TableCell className="py-1 font-mono text-xs text-foreground/65">{product.code}</TableCell>
+                        <TableCell className="py-1">
+                          <p className="font-semibold">{formatCurrency(product.casePrice)}</p>
+                          <p className="text-xs text-foreground/50">{formatCurrency(product.unitPriceVat)}/unit</p>
                         </TableCell>
-                        <TableCell>
-                          <p className="font-semibold text-foreground">{product.available.toFixed(0)} cases</p>
-                          <p className="text-xs text-foreground/50">Reorder at {product.reorderLevel.toFixed(0)}</p>
+                        <TableCell className="py-1">
+                          <p className="font-semibold">{product.available.toFixed(0)}</p>
+                          <p className="text-xs text-foreground/50">Reorder {product.reorderLevel.toFixed(0)}</p>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="py-1">
                           <Badge className={product.stockState === "Healthy" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : product.stockState === "Low stock" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-rose-50 text-rose-700 border-rose-200"}>
                             {product.stockState}
                           </Badge>
@@ -389,114 +418,60 @@ const AdminDashboard = () => {
                     ))}
                     {!filteredProducts.length && !catalogLoading && (
                       <TableRow>
-                        <TableCell colSpan={5} className="py-10 text-center text-sm text-foreground/55">
-                          No catalogue lines match your search.
-                        </TableCell>
+                        <TableCell colSpan={5} className="py-8 text-center text-sm text-foreground/55">No matching products.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="inventory" className="space-y-6">
-            <AdminInventoryManager
-              accessToken={session?.access_token ?? null}
-              products={products}
-              inventory={inventory}
-              onInventoryChanged={() => {
-                void refetchInventory();
-              }}
-            />
-            <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-              <Card className="overflow-hidden border-primary/10">
-                <CardContent className="p-0">
-                  <div className="border-b border-border bg-muted/30 px-6 py-4">
-                    <h2 className="text-xl font-bold text-foreground">Locations</h2>
-                    <p className="text-sm text-foreground/55">Inventory coverage across active storage points.</p>
+            {/* Location breakdown from inventory data */}
+            <Card className="overflow-hidden border-primary/10">
+              <CardContent className="p-0">
+                <div className="border-b border-border bg-muted/30 px-6 py-3">
+                  <h2 className="text-lg font-bold text-foreground">Stock by location</h2>
+                  <p className="text-xs text-foreground/55">Available inventory at each location.</p>
+                </div>
+                <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-muted/20">
+                  <div className="text-sm text-foreground/60">{inventory.length} rows • Page {inventoryPage + 1}</div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={inventoryPage === 0} onClick={() => setInventoryPage(p => p - 1)}>Prev</Button>
+                    <Button variant="outline" size="sm" disabled={(inventoryPage + 1) * PAGE_SIZE >= inventory.length} onClick={() => setInventoryPage(p => p + 1)}>Next</Button>
                   </div>
-                  <div className="space-y-3 p-6">
-                    {locationSummary.map((location) => (
-                      <div key={location.code} className="rounded-2xl border border-border bg-card p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-bold text-foreground">{location.name}</p>
-                            <p className="text-xs uppercase tracking-[0.18em] text-primary">{location.code}</p>
-                          </div>
-                          <Badge variant="outline" className="border-primary/20 bg-primary/5 text-accent">
-                            {location.lines} SKUs
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="h-8">Product</TableHead>
+                      <TableHead className="h-8">Location</TableHead>
+                      <TableHead className="h-8">On Hand</TableHead>
+                      <TableHead className="h-8">Reserved</TableHead>
+                      <TableHead className="h-8">Available</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {inventory.slice(inventoryPage * PAGE_SIZE, (inventoryPage + 1) * PAGE_SIZE).map((row) => (
+                      <TableRow key={`${row.product_id}-${row.location_code}`} className="h-10">
+                        <TableCell className="py-1 font-semibold">{row.name}</TableCell>
+                        <TableCell className="py-1 text-xs uppercase text-primary">{row.location_code}</TableCell>
+                        <TableCell className="py-1">{row.on_hand_cases.toFixed(0)}</TableCell>
+                        <TableCell className="py-1">{row.reserved_cases.toFixed(0)}</TableCell>
+                        <TableCell className="py-1">
+                          <Badge className={row.available_cases <= row.reorder_level_cases ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}>
+                            {row.available_cases.toFixed(0)}
                           </Badge>
-                        </div>
-                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                          <div className="rounded-xl bg-muted/50 p-3">
-                            <p className="text-foreground/50">Available</p>
-                            <p className="mt-1 text-lg font-bold text-foreground">{location.available.toFixed(0)}</p>
-                          </div>
-                          <div className="rounded-xl bg-muted/50 p-3">
-                            <p className="text-foreground/50">Reserved</p>
-                            <p className="mt-1 text-lg font-bold text-foreground">{location.reserved.toFixed(0)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {!locationSummary.length && !inventoryLoading && (
-                      <div className="rounded-2xl border border-dashed border-border px-5 py-8 text-sm text-foreground/60">
-                        No inventory locations are available yet.
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="overflow-hidden border-primary/10">
-                <CardContent className="p-0">
-                  <div className="border-b border-border bg-muted/30 px-6 py-4">
-                    <h2 className="text-xl font-bold text-foreground">Inventory snapshot</h2>
-                    <p className="text-sm text-foreground/55">Detailed on-hand, reserved, and available quantities by location.</p>
-                  </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead>On hand</TableHead>
-                        <TableHead>Reserved</TableHead>
-                        <TableHead>Available</TableHead>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {inventory.slice(0, 18).map((row) => (
-                        <TableRow key={`${row.product_id}-${row.location_code}`}>
-                          <TableCell>
-                            <p className="font-semibold text-foreground">{row.name}</p>
-                            <p className="text-xs text-foreground/50">Updated {formatDate(row.updated_at)}</p>
-                          </TableCell>
-                          <TableCell>
-                            <p className="font-semibold text-foreground">{row.location_name}</p>
-                            <p className="text-xs uppercase tracking-[0.18em] text-primary">{row.location_code}</p>
-                          </TableCell>
-                          <TableCell>{row.on_hand_cases.toFixed(0)}</TableCell>
-                          <TableCell>{row.reserved_cases.toFixed(0)}</TableCell>
-                          <TableCell>
-                            <Badge className={row.available_cases <= row.reorder_level_cases ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}>
-                              {row.available_cases.toFixed(0)} cases
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {!inventory.length && !inventoryLoading && (
-                        <TableRow>
-                          <TableCell colSpan={5} className="py-10 text-center text-sm text-foreground/55">
-                            No inventory snapshot data is available.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </div>
+                    ))}
+                    {!inventory.length && !inventoryLoading && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8 text-center text-sm text-foreground/55">No inventory data.</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="payments" className="space-y-6">
@@ -518,6 +493,30 @@ const AdminDashboard = () => {
                   )}
                 </div>
 
+                {/* Status and date filters */}
+                {session?.access_token && (
+                  <div className="flex flex-wrap gap-3 px-6 py-3 border-b border-border bg-muted/20 items-center">
+                    <select
+                      value={paymentStatusFilter}
+                      onChange={(e) => { setPaymentStatusFilter(e.target.value); setPaymentPage(0); }}
+                      className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="paid">Paid</option>
+                      <option value="pending">Pending</option>
+                      <option value="failed">Failed/Cancelled</option>
+                    </select>
+                    <input type="date" placeholder="From date" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                    <input type="date" placeholder="To date" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                    <Button variant="outline" size="sm" className="border-primary/20">
+                      Filter
+                    </Button>
+                    <Button variant="ghost" size="sm" className="ml-auto text-accent">
+                      Export CSV
+                    </Button>
+                  </div>
+                )}
+
                 {!session?.access_token ? (
                   <div className="p-6">
                     <div className="rounded-2xl border border-dashed border-border px-6 py-10 text-center text-sm text-foreground/60">
@@ -537,49 +536,68 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Payer</TableHead>
-                        <TableHead>Order</TableHead>
-                        <TableHead>Reference</TableHead>
-                        <TableHead>Method</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Paid at</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {adminData?.payments.map((payment) => (
+                  <>
+                    {/* Compact pagination controls */}
+                    <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-muted/20">
+                      <div className="text-sm text-foreground/60">
+                        {filteredPayments.length} total • Showing {paymentPage * PAGE_SIZE + 1}-{Math.min((paymentPage + 1) * PAGE_SIZE, filteredPayments.length)}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={paymentPage === 0}
+                          onClick={() => setPaymentPage(p => p - 1)}
+                        >
+                          Prev
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(paymentPage + 1) * PAGE_SIZE >= filteredPayments.length}
+                          onClick={() => setPaymentPage(p => p + 1)}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Payer</TableHead>
+                          <TableHead>Order</TableHead>
+                          <TableHead>Reference</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredPayments
+                          .slice(paymentPage * PAGE_SIZE, (paymentPage + 1) * PAGE_SIZE)
+                          .map((payment) => (
                         <TableRow key={payment.id}>
                           <TableCell>
-                            <p className="font-semibold text-foreground">{payment.customerEmail ?? "Guest checkout"}</p>
+                            <p className="font-semibold text-foreground">{payment.customerEmail ?? "Guest"}</p>
                             <p className="text-xs text-foreground/50">{formatDate(payment.createdAt)}</p>
                           </TableCell>
-                          <TableCell>{payment.orderNumber}</TableCell>
+                          <TableCell className="font-mono text-xs">{payment.orderNumber}</TableCell>
                           <TableCell className="font-mono text-xs text-foreground/65">{payment.reference}</TableCell>
-                          <TableCell>{payment.paymentMethod ?? "Paynow"}</TableCell>
                           <TableCell className="font-semibold text-foreground">{formatCurrency(payment.amount)}</TableCell>
                           <TableCell>
-                            <div className="flex flex-col gap-2">
-                              <Badge className={statusBadgeClasses(payment.paymentStatus)}>{payment.paymentStatus.replace(/_/g, " ")}</Badge>
-                              {payment.providerStatus ? (
-                                <span className="text-xs text-foreground/45">Provider: {payment.providerStatus}</span>
-                              ) : null}
-                            </div>
+                            <Badge className={statusBadgeClasses(payment.paymentStatus)}>{payment.paymentStatus.replace(/_/g, " ")}</Badge>
                           </TableCell>
-                          <TableCell>{formatDate(payment.paidAt)}</TableCell>
                         </TableRow>
                       ))}
-                      {!adminData?.payments.length && (
-                        <TableRow>
-                          <TableCell colSpan={7} className="py-10 text-center text-sm text-foreground/55">
-                            No payment records are available yet.
-                          </TableCell>
-                        </TableRow>
-                      )}
+                        {!filteredPayments.length && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="py-10 text-center text-sm text-foreground/55">
+                              No payment records match the selected filter.
+                            </TableCell>
+                          </TableRow>
+                        )}
                     </TableBody>
                   </Table>
+                  </>
                 )}
               </CardContent>
             </Card>

@@ -15,6 +15,21 @@ import {
   recordAdminInventoryMovement,
   updateAdminReorderLevel,
 } from "../shared/adminInventory";
+import {
+  AdminCatalogError,
+  loadAdminProducts,
+  loadAdminCategories,
+  createAdminProduct,
+  updateAdminProduct,
+  deleteAdminProduct,
+  createAdminCategory,
+} from "../shared/adminCatalog";
+import {
+  AdminOrdersError,
+  loadAdminOrders,
+  loadAdminOrderDetail,
+  updateAdminOrderStatus,
+} from "../shared/adminOrders";
 
 // ---------------------------------------------------------------------------
 // Supabase admin client (bypasses RLS)
@@ -381,6 +396,260 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
         return;
       }
       const message = error instanceof Error ? error.message : "Unable to update reorder level";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── Admin: Catalog Products ───────────────────────────────────────────────────
+  app.get("/api/admin/catalog/products", async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 50, 100);
+      const offset = Number(req.query.offset) || 0;
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+
+      const result = await loadAdminProducts(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        limit,
+        offset,
+        search
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof AdminCatalogError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to load products";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/admin/catalog/products", async (req, res) => {
+    try {
+      const result = await createAdminProduct(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        req.body as any
+      );
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof AdminCatalogError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to create product";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.put("/api/admin/catalog/products", async (req, res) => {
+    try {
+      const productId = req.query.id;
+      if (!productId || typeof productId !== "string") {
+        res.status(400).json({ error: "Product ID required" });
+        return;
+      }
+
+      const result = await updateAdminProduct(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        productId,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        req.body as any
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof AdminCatalogError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to update product";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.delete("/api/admin/catalog/products", async (req, res) => {
+    try {
+      const productId = req.query.id;
+      if (!productId || typeof productId !== "string") {
+        res.status(400).json({ error: "Product ID required" });
+        return;
+      }
+
+      const result = await deleteAdminProduct(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        productId
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof AdminCatalogError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to delete product";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── Admin: Catalog Categories ───────────────────────────────────────────
+  app.get("/api/admin/catalog/categories", async (req, res) => {
+    try {
+      const result = await loadAdminCategories({
+        supabaseUrl: env.SUPABASE_URL,
+        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+        adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+        authorizationHeader: req.headers.authorization,
+      });
+      res.status(200).json({ categories: result });
+    } catch (error) {
+      if (error instanceof AdminCatalogError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to load categories";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/admin/catalog/categories", async (req, res) => {
+    try {
+      const body = req.body as { name?: string };
+      if (!body?.name) {
+        res.status(400).json({ error: "Category name required" });
+        return;
+      }
+
+      const result = await createAdminCategory(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        body.name
+      );
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof AdminCatalogError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to create category";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── Admin: Orders ─────────────────────────────────────────────────────
+  app.get("/api/admin/orders", async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 50, 100);
+      const offset = Number(req.query.offset) || 0;
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+
+      const result = await loadAdminOrders(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        limit,
+        offset,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        status as any,
+        search
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof AdminOrdersError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to load orders";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/admin/orders/detail", async (req, res) => {
+    try {
+      const orderId = req.query.id;
+      if (!orderId || typeof orderId !== "string") {
+        res.status(400).json({ error: "Order ID required" });
+        return;
+      }
+
+      const result = await loadAdminOrderDetail(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        orderId
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof AdminOrdersError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to load order details";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.put("/api/admin/orders", async (req, res) => {
+    try {
+      const orderId = req.query.id;
+      if (!orderId || typeof orderId !== "string") {
+        res.status(400).json({ error: "Order ID required" });
+        return;
+      }
+
+      const body = req.body as { status?: string };
+      if (!body?.status) {
+        res.status(400).json({ error: "Status required" });
+        return;
+      }
+
+      const result = await updateAdminOrderStatus(
+        {
+          supabaseUrl: env.SUPABASE_URL,
+          serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+          adminEmails: env.ADMIN_EMAILS?.split(",").map((email) => email.trim()).filter(Boolean) ?? [],
+          authorizationHeader: req.headers.authorization,
+        },
+        orderId,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        body.status as any
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof AdminOrdersError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to update order status";
       res.status(500).json({ error: message });
     }
   });
