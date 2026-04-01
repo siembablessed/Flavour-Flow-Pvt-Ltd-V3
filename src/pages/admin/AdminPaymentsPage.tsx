@@ -67,7 +67,7 @@ export default function AdminPaymentsPage() {
     return list;
   }, [filteredPayments, sortBy, sortDirection]);
 
-  const paymentsPageSize = density === "compact" ? 40 : 25;
+  const paymentsPageSize = density === "compact" ? 16 : 8;
   const totalPaymentsPages = Math.max(1, Math.ceil(filteredPayments.length / paymentsPageSize));
   const paymentsPageRows = useMemo(() => {
     const safePage = Math.min(Math.max(1, paymentsPage), totalPaymentsPages);
@@ -274,7 +274,12 @@ export default function AdminPaymentsPage() {
 
             <div className="flex flex-col gap-3 border-t border-border bg-muted/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-foreground/55">
-                Showing {(paymentsPage - 1) * paymentsPageSize + Math.min(paymentsPageRows.length, 1)}-{(paymentsPage - 1) * paymentsPageSize + paymentsPageRows.length} of {filteredPayments.length}
+                {(() => {
+                  const start = (paymentsPage - 1) * paymentsPageSize;
+                  const end = start + paymentsPageRows.length;
+                  const remaining = Math.max(0, filteredPayments.length - end);
+                  return `Showing ${Math.min(start + 1, filteredPayments.length)}-${end} of ${filteredPayments.length} • ${remaining} left`;
+                })()}
               </p>
               <div className="flex items-center gap-2">
                 <Button variant="secondary" disabled={paymentsPage <= 1} onClick={() => setPaymentsPage((p) => Math.max(1, p - 1))}>

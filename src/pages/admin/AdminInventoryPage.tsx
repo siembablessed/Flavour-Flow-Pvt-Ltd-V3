@@ -18,6 +18,7 @@ export default function AdminInventoryPage() {
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
   const [sortBy, setSortBy] = useState<InventorySortKey>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [locationsPage, setLocationsPage] = useState(1);
 
   const locations = useMemo(() => {
     const grouped = new Map<string, { name: string; lines: number; available: number; reserved: number }>();
@@ -35,6 +36,14 @@ export default function AdminInventoryPage() {
     }
     return Array.from(grouped.entries()).map(([code, value]) => ({ code, ...value }));
   }, [inventory]);
+
+  const locationsPageSize = 8;
+  const totalLocationsPages = Math.max(1, Math.ceil(locations.length / locationsPageSize));
+  const locationsPageRows = useMemo(() => {
+    const safePage = Math.min(Math.max(1, locationsPage), totalLocationsPages);
+    const start = (safePage - 1) * locationsPageSize;
+    return locations.slice(start, start + locationsPageSize);
+  }, [locations, locationsPage, totalLocationsPages]);
 
   const filteredInventoryRows = useMemo(() => {
     const query = inventorySearch.trim().toLowerCase();
@@ -58,7 +67,7 @@ export default function AdminInventoryPage() {
     return list;
   }, [filteredInventoryRows, sortBy, sortDirection]);
 
-  const inventoryPageSize = density === "compact" ? 35 : 20;
+  const inventoryPageSize = density === "compact" ? 16 : 8;
   const totalInventoryPages = Math.max(1, Math.ceil(filteredInventoryRows.length / inventoryPageSize));
   const inventoryPageRows = useMemo(() => {
     const safePage = Math.min(Math.max(1, inventoryPage), totalInventoryPages);
@@ -94,7 +103,7 @@ export default function AdminInventoryPage() {
               <p className="text-sm text-foreground/55">Inventory coverage across active storage points.</p>
             </div>
             <div className="space-y-3 p-6">
-              {locations.map((location) => (
+              {locationsPageRows.map((location) => (
                 <div key={location.code} className="rounded-2xl border border-border bg-card p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -123,6 +132,33 @@ export default function AdminInventoryPage() {
                 </div>
               )}
             </div>
+            {locations.length > locationsPageSize ? (
+              <div className="flex flex-col gap-3 border-t border-border bg-muted/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-foreground/55">
+                  {(() => {
+                    const start = (locationsPage - 1) * locationsPageSize;
+                    const end = start + locationsPageRows.length;
+                    const remaining = Math.max(0, locations.length - end);
+                    return `Showing ${Math.min(start + 1, locations.length)}-${end} of ${locations.length} • ${remaining} left`;
+                  })()}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" disabled={locationsPage <= 1} onClick={() => setLocationsPage((p) => Math.max(1, p - 1))}>
+                    Prev
+                  </Button>
+                  <Badge variant="outline" className="border-primary/20 bg-primary/5 text-accent">
+                    Page {Math.min(locationsPage, totalLocationsPages)} / {totalLocationsPages}
+                  </Badge>
+                  <Button
+                    variant="secondary"
+                    disabled={locationsPage >= totalLocationsPages}
+                    onClick={() => setLocationsPage((p) => Math.min(totalLocationsPages, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -223,7 +259,12 @@ export default function AdminInventoryPage() {
 
             <div className="flex flex-col gap-3 border-t border-border bg-muted/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-foreground/55">
-                Showing {(inventoryPage - 1) * inventoryPageSize + Math.min(inventoryPageRows.length, 1)}-{(inventoryPage - 1) * inventoryPageSize + inventoryPageRows.length} of {filteredInventoryRows.length}
+                {(() => {
+                  const start = (inventoryPage - 1) * inventoryPageSize;
+                  const end = start + inventoryPageRows.length;
+                  const remaining = Math.max(0, filteredInventoryRows.length - end);
+                  return `Showing ${Math.min(start + 1, filteredInventoryRows.length)}-${end} of ${filteredInventoryRows.length} • ${remaining} left`;
+                })()}
               </p>
               <div className="flex items-center gap-2">
                 <Button variant="secondary" disabled={inventoryPage <= 1} onClick={() => setInventoryPage((p) => Math.max(1, p - 1))}>

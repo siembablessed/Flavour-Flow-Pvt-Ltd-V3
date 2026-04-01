@@ -15,8 +15,8 @@ function shortenEmail(value: string): string {
   if (!value) return "";
   const [localPart, domain = ""] = value.split("@");
   if (!domain) return `${value.slice(0, 4)}…`;
-  const localShort = localPart.length > 3 ? `${localPart.slice(0, 3)}…` : localPart;
-  const domainShort = domain.length > 6 ? `${domain.slice(0, 3)}…` : domain;
+  const localShort = localPart.length > 2 ? `${localPart.slice(0, 2)}…` : localPart;
+  const domainShort = domain.length > 2 ? `${domain.slice(0, 2)}…` : domain;
   return `${localShort}@${domainShort}`;
 }
 
@@ -138,10 +138,13 @@ export default function AdminOverviewPage() {
                   {latestPayments.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell>
-                        <p className="font-semibold text-foreground" title={p.orderNumber}>
+                        <p className="truncate max-w-[140px] font-semibold text-foreground" title={p.orderNumber}>
                           {shortenOrderReference(p.orderNumber)}
                         </p>
-                        <p className="text-xs text-foreground/50" title={p.customerEmail ?? "Guest checkout"}>
+                        <p
+                          className="truncate max-w-[120px] text-xs text-foreground/50"
+                          title={p.customerEmail ?? "Guest checkout"}
+                        >
                           {p.customerEmail ? shortenEmail(p.customerEmail) : "Guest checkout"}
                         </p>
                       </TableCell>
