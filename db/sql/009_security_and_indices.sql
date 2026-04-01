@@ -38,12 +38,11 @@ for select
 to public
 using (true);
 
+-- IMPORTANT:
+-- Do NOT grant public read access to inventory_levels by default because it exposes
+-- per-location on_hand, reserved, and reorder levels.
+-- Use `v_inventory_public` (011_public_inventory_view.sql) for storefront reads instead.
 drop policy if exists "inventory_levels_read_all" on public.inventory_levels;
-create policy "inventory_levels_read_all"
-on public.inventory_levels
-for select
-to public
-using (true);
 
 -- Inventory movements are usually internal, don't expose them publicly by default.
 -- (No SELECT policy created for inventory_movements).

@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import PaymentComplete from "./pages/PaymentComplete.tsx";
+<<<<<<< HEAD
 import AdminDashboard from "./pages/AdminDashboard.tsx";
 import { AuthDialog } from "./components/AuthDialog";
 
@@ -44,6 +45,14 @@ function ProtectedAdminRoute() {
   // Authorized - show admin dashboard
   return <AdminDashboard />;
 }
+=======
+import AdminLayout from "./pages/admin/AdminLayout.tsx";
+import AdminRedirect from "./pages/admin/AdminRedirect.tsx";
+import AdminOverviewPage from "./pages/admin/AdminOverviewPage.tsx";
+import AdminCataloguePage from "./pages/admin/AdminCataloguePage.tsx";
+import AdminInventoryPage from "./pages/admin/AdminInventoryPage.tsx";
+import AdminPaymentsPage from "./pages/admin/AdminPaymentsPage.tsx";
+>>>>>>> 7f2e911 (admin dash patch)
 
 const queryClient = new QueryClient();
 
@@ -56,7 +65,17 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+<<<<<<< HEAD
             <Route path="/admin" element={<ProtectedAdminRoute />} />
+=======
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<AdminRedirect />} />
+              <Route path="overview" element={<AdminOverviewPage />} />
+              <Route path="catalogue" element={<AdminCataloguePage />} />
+              <Route path="inventory" element={<AdminInventoryPage />} />
+              <Route path="payments" element={<AdminPaymentsPage />} />
+            </Route>
+>>>>>>> 7f2e911 (admin dash patch)
             <Route path="/payment/complete" element={<PaymentComplete />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

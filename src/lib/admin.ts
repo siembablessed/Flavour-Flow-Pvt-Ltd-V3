@@ -55,6 +55,29 @@ export async function fetchAdminInventoryMovements(accessToken: string): Promise
   return payload.movements;
 }
 
+export interface AdminInventorySnapshotRow {
+  productId: string;
+  name: string;
+  locationCode: string;
+  locationName: string;
+  onHandCases: number;
+  reservedCases: number;
+  availableCases: number;
+  reorderLevelCases: number;
+  updatedAt: string;
+}
+
+export async function fetchAdminInventorySnapshot(accessToken: string): Promise<AdminInventorySnapshotRow[]> {
+  const response = await fetch("/api/admin/inventory/snapshot", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const payload = await parseJson<{ snapshot: AdminInventorySnapshotRow[] }>(response, "Unable to load inventory snapshot.");
+  return payload.snapshot;
+}
+
 export async function createInventoryMovement(accessToken: string, input: InventoryMovementInput): Promise<AdminInventoryMutationResult> {
   const response = await fetch("/api/admin/inventory/movements", {
     method: "POST",

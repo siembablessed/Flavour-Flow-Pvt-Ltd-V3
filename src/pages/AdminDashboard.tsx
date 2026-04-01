@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -615,5 +616,10 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+=======
+import AdminLayout from "./admin/AdminLayout";
+>>>>>>> 7f2e911 (admin dash patch)
 
+// Backwards-compatible entrypoint for older links.
+export default AdminLayout;
 
