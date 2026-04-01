@@ -90,4 +90,4 @@ Generate a fresh catalog seed from static data:
 npm run db:seed:generate
 ```
 
-v2.9
+v2.9 | Pushed to v3.4
