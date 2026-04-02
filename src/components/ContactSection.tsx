@@ -27,6 +27,7 @@ const ContactSection = () => {
 
   const contactInfo = [
     { icon: Phone, label: "Head Office", value: "+263 77 142 0031", href: "tel:+263771420031" },
+    { icon: Phone, label: "Orders", value: "+263 771420031 / +263789063927", href: "tel:+263771420031" },
     { icon: MapPin, label: "Address", value: "10960, Mapako, Chinhoyi" },
   ];
 
