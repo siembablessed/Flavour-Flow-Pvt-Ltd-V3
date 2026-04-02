@@ -206,7 +206,7 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
           </div>
         </div>
 
-        <div className="flex flex-col xl:flex-row gap-8">
+        <div className="flex flex-col lg:flex-row gap-8">
           {/* Products Grid */}
           <div className="flex-1">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
@@ -274,8 +274,8 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
             </div>
           </div>
 
-          {/* Sidebar Ads - Right side on xl and above */}
-          <div className="hidden xl:block w-72 flex-shrink-0">
+          {/* Sidebar Ads - Right side on lg and above */}
+          <div className="hidden lg:block w-72 flex-shrink-0">
             <div className="sticky top-24 space-y-4">
               {/* Featured Product Banner */}
               <div className={`p-5 rounded-xl ${featuredAd.bg} text-white relative overflow-hidden`}>
@@ -303,7 +303,7 @@ const ProductCatalog = ({ searchQuery }: ProductCatalogProps) => {
                 >
                   <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full group-hover:scale-110 transition-transform"></div>
                   <div className="absolute -left-2 -bottom-2 w-10 h-10 bg-white/5 rounded-full"></div>
-                  
+
                   <div className="flex items-center gap-3 relative z-10">
                     <div className={`p-2.5 rounded-xl ${ad.iconBg}`}>
                       <ad.icon className="w-5 h-5" />
