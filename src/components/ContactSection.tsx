@@ -60,11 +60,7 @@ const ContactSection = () => {
             <div className="pt-5 border-t border-border">
               <p className="text-xs font-medium text-foreground/40 mb-3">Regional Offices</p>
               <div className="space-y-2 text-sm text-foreground/60">
-                <p>Kwekwe — 055 23747</p>
-                <p>Bulawayo — 09 70611</p>
-                <p>Mutare — 020 64341</p>
-                <p>Masvingo — 039 262397</p>
-                <p>Vic Falls — 013 45956</p>
+                <p>Chinhoyi</p>
               </div>
             </div>
           </div>
