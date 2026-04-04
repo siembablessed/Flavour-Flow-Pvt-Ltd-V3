@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { Boxes, CreditCard, PackageSearch, Store, Warehouse } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
+import { getAccessibleAdminSections, hasAdminPermission } from "../../../shared/adminAccess";
 import { useAuth } from "@/context/AuthContext";
 import { useCatalog } from "@/hooks/useCatalog";
 import { useAdminInventorySnapshot } from "@/hooks/useAdminInventorySnapshot";
@@ -11,6 +12,7 @@ import { AuthDialog } from "@/components/AuthDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import AdminAccessNotice from "./AdminAccessNotice";
 import type { AdminWorkspaceData } from "./adminTypes";
 import { formatCurrency } from "./adminFormat";
 
@@ -25,14 +27,11 @@ export default function AdminLayout() {
   const { session, loading: authLoading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
 
-  const { data: products = [], isLoading: catalogLoading, refetch: refetchCatalog } = useCatalog();
-  const { data: inventoryRaw = [], isLoading: inventoryLoading, refetch: refetchInventory } = useAdminInventorySnapshot(session?.access_token ?? null);
-
   const {
     data: adminData,
-    isLoading: paymentsLoading,
-    error: paymentsError,
-    refetch: refetchPayments,
+    isLoading: adminLoading,
+    error: adminError,
+    refetch: refetchAdmin,
   } = useQuery({
     queryKey: ["admin-dashboard", session?.access_token],
     queryFn: () => fetchAdminDashboard(session!.access_token),
@@ -40,8 +39,17 @@ export default function AdminLayout() {
     retry: false,
   });
 
-  const showSignIn = !authLoading && (!session?.access_token || !!paymentsError);
-  const isBooting = authLoading || catalogLoading || inventoryLoading || paymentsLoading;
+  const access = adminData?.adminUser ?? null;
+  const canReadCatalogue = hasAdminPermission(access, "catalog.read");
+  const canReadInventory = hasAdminPermission(access, "inventory.read");
+  const canReadPayments = hasAdminPermission(access, "payments.read");
+
+  const { data: products = [], isLoading: catalogLoading, refetch: refetchCatalog } = useCatalog();
+  const { data: inventoryRaw = [], isLoading: inventoryLoading, refetch: refetchInventory } = useAdminInventorySnapshot(
+    canReadInventory ? session?.access_token ?? null : null,
+  );
+
+  const accessibleSections = useMemo(() => (access ? getAccessibleAdminSections(access) : []), [access]);
 
   const inventory = useMemo(() => {
     return inventoryRaw.map((row) => ({
@@ -63,20 +71,25 @@ export default function AdminLayout() {
     const locations = new Set(inventory.map((r) => r.location_code));
 
     return {
-      products: products.length,
-      onHand: totalOnHand,
-      reserved: totalReserved,
-      locations: locations.size,
-      revenue: adminData?.summary.totalRevenue ?? 0,
-      paidOrders: adminData?.summary.paidOrders ?? 0,
+      products: canReadCatalogue || canReadInventory ? products.length : null,
+      onHand: canReadInventory ? totalOnHand : null,
+      reserved: canReadInventory ? totalReserved : null,
+      locations: canReadInventory ? locations.size : null,
+      revenue: canReadPayments ? adminData?.summary.totalRevenue ?? 0 : null,
+      paidOrders: canReadPayments ? adminData?.summary.paidOrders ?? 0 : null,
     };
-  }, [adminData?.summary.paidOrders, adminData?.summary.totalRevenue, inventory, products.length]);
+  }, [adminData?.summary.paidOrders, adminData?.summary.totalRevenue, canReadCatalogue, canReadInventory, canReadPayments, inventory, products.length]);
 
   const refetchAll = () => {
     void refetchCatalog();
     void refetchInventory();
-    void refetchPayments();
+    void refetchAdmin();
   };
+
+  const isBooting = authLoading || adminLoading || (canReadInventory && inventoryLoading) || catalogLoading;
+  const errorStatus = typeof adminError === "object" && adminError !== null && "status" in adminError ? Number(adminError.status) : null;
+  const showSignIn = !authLoading && (!session?.access_token || errorStatus === 401);
+  const showForbidden = !authLoading && Boolean(session?.access_token) && errorStatus === 403;
 
   if (isBooting) {
     return (
@@ -113,13 +126,26 @@ export default function AdminLayout() {
     );
   }
 
+  if (showForbidden) {
+    return <AdminAccessNotice title="Admin access blocked" description={(adminError as Error).message} />;
+  }
+
+  if (adminError && !access) {
+    return <AdminAccessNotice title="Admin workspace unavailable" description={(adminError as Error).message} />;
+  }
+
+  if (!access || !accessibleSections.length) {
+    return <AdminAccessNotice title="No admin sections assigned" description="Your account is active, but no dashboard sections are assigned to it yet." />;
+  }
+
   const ctx: AdminWorkspaceData = {
     accessToken: session?.access_token ?? null,
-    products: products as AdminWorkspaceData["products"],
+    access,
+    products,
     inventory,
     adminData,
-    paymentsLoading,
-    paymentsError,
+    paymentsLoading: adminLoading,
+    paymentsError: adminError,
     refetchAll,
   };
 
@@ -130,10 +156,13 @@ export default function AdminLayout() {
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground/50">Admin</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Operations</h1>
-            <p className="mt-1 text-sm text-foreground/60">Inventory, catalogue, and payments — in one workspace.</p>
+            <p className="mt-1 text-sm text-foreground/60">Role-based access is active for this workspace.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="border-primary/20 bg-primary/5 text-accent">
+              {String(access.role).replace(/_/g, " ")}
+            </Badge>
             <Button asChild variant="secondary">
               <Link to="/">
                 <Store className="mr-2 h-4 w-4" />
@@ -151,12 +180,12 @@ export default function AdminLayout() {
                   <PackageSearch className="h-4 w-4 text-primary" />
                 </div>
                 <Badge variant="outline" className="border-primary/20 bg-primary/5 text-accent">
-                  Live
+                  {canReadCatalogue || canReadInventory ? "Live" : "Restricted"}
                 </Badge>
               </div>
               <p className="text-sm text-foreground/60">Catalogue lines</p>
-              <p className="mt-1 text-2xl font-bold text-foreground">{overview.products}</p>
-              <p className="mt-1 text-xs text-foreground/50">Active products in the storefront</p>
+              <p className="mt-1 text-2xl font-bold text-foreground">{overview.products ?? "--"}</p>
+              <p className="mt-1 text-xs text-foreground/50">{canReadCatalogue || canReadInventory ? "Visible to your current role" : "Not assigned to your role"}</p>
             </CardContent>
           </Card>
 
@@ -167,12 +196,14 @@ export default function AdminLayout() {
                   <Warehouse className="h-4 w-4 text-primary" />
                 </div>
                 <Badge variant="outline" className="border-primary/20 bg-primary/5 text-accent">
-                  Live
+                  {canReadInventory ? "Live" : "Restricted"}
                 </Badge>
               </div>
               <p className="text-sm text-foreground/60">Cases on hand</p>
-              <p className="mt-1 text-2xl font-bold text-foreground">{overview.onHand.toFixed(0)}</p>
-              <p className="mt-1 text-xs text-foreground/50">{overview.reserved.toFixed(0)} cases reserved</p>
+              <p className="mt-1 text-2xl font-bold text-foreground">{overview.onHand?.toFixed(0) ?? "--"}</p>
+              <p className="mt-1 text-xs text-foreground/50">
+                {canReadInventory ? `${overview.reserved?.toFixed(0) ?? "0"} cases reserved` : "Inventory visibility not assigned"}
+              </p>
             </CardContent>
           </Card>
 
@@ -183,12 +214,12 @@ export default function AdminLayout() {
                   <Boxes className="h-4 w-4 text-primary" />
                 </div>
                 <Badge variant="outline" className="border-primary/20 bg-primary/5 text-accent">
-                  Live
+                  {canReadInventory ? "Live" : "Restricted"}
                 </Badge>
               </div>
               <p className="text-sm text-foreground/60">Locations tracked</p>
-              <p className="mt-1 text-2xl font-bold text-foreground">{overview.locations}</p>
-              <p className="mt-1 text-xs text-foreground/50">Warehouses & selling points</p>
+              <p className="mt-1 text-2xl font-bold text-foreground">{overview.locations ?? "--"}</p>
+              <p className="mt-1 text-xs text-foreground/50">{canReadInventory ? "Warehouses and selling points" : "Inventory visibility not assigned"}</p>
             </CardContent>
           </Card>
 
@@ -199,12 +230,12 @@ export default function AdminLayout() {
                   <CreditCard className="h-4 w-4 text-primary" />
                 </div>
                 <Badge variant="outline" className="border-primary/20 bg-primary/5 text-accent">
-                  Live
+                  {canReadPayments ? "Live" : "Restricted"}
                 </Badge>
               </div>
               <p className="text-sm text-foreground/60">Revenue collected</p>
-              <p className="mt-1 text-2xl font-bold text-foreground">{formatCurrency(overview.revenue)}</p>
-              <p className="mt-1 text-xs text-foreground/50">{overview.paidOrders} paid orders</p>
+              <p className="mt-1 text-2xl font-bold text-foreground">{overview.revenue !== null ? formatCurrency(overview.revenue) : "--"}</p>
+              <p className="mt-1 text-xs text-foreground/50">{canReadPayments ? `${overview.paidOrders ?? 0} paid orders` : "Payments visibility not assigned"}</p>
             </CardContent>
           </Card>
         </div>
@@ -213,22 +244,30 @@ export default function AdminLayout() {
           <aside className="lg:sticky lg:top-6 lg:self-start">
             <div className="rounded-2xl border border-border bg-card p-2 shadow-sm">
               <nav className="space-y-1">
-                <NavLink to="/admin/overview" className={navLinkClassName}>
-                  <Warehouse className="h-4 w-4" />
-                  Overview
-                </NavLink>
-                <NavLink to="/admin/catalogue" className={navLinkClassName}>
-                  <PackageSearch className="h-4 w-4" />
-                  Catalogue
-                </NavLink>
-                <NavLink to="/admin/inventory" className={navLinkClassName}>
-                  <Boxes className="h-4 w-4" />
-                  Inventory
-                </NavLink>
-                <NavLink to="/admin/payments" className={navLinkClassName}>
-                  <CreditCard className="h-4 w-4" />
-                  Payments
-                </NavLink>
+                {accessibleSections.includes("overview") ? (
+                  <NavLink to="/admin/overview" className={navLinkClassName}>
+                    <Warehouse className="h-4 w-4" />
+                    Overview
+                  </NavLink>
+                ) : null}
+                {accessibleSections.includes("catalogue") ? (
+                  <NavLink to="/admin/catalogue" className={navLinkClassName}>
+                    <PackageSearch className="h-4 w-4" />
+                    Catalogue
+                  </NavLink>
+                ) : null}
+                {accessibleSections.includes("inventory") ? (
+                  <NavLink to="/admin/inventory" className={navLinkClassName}>
+                    <Boxes className="h-4 w-4" />
+                    Inventory
+                  </NavLink>
+                ) : null}
+                {accessibleSections.includes("payments") ? (
+                  <NavLink to="/admin/payments" className={navLinkClassName}>
+                    <CreditCard className="h-4 w-4" />
+                    Payments
+                  </NavLink>
+                ) : null}
               </nav>
             </div>
           </aside>

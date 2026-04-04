@@ -30,16 +30,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       authorizationHeader: req.headers.authorization,
     };
 
-    // GET /api/admin/orders - List orders
+    if (req.method === "GET" && req.query.id) {
+      const orderId = req.query.id;
+      if (!orderId || typeof orderId !== "string") {
+        res.status(400).json({ error: "Order ID required" });
+        return;
+      }
+
+      const result = await loadAdminOrderDetail(config, orderId);
+      res.status(200).json(result);
+      return;
+    }
+
     if (req.method === "GET") {
       const limit = Math.min(Number(req.query.limit) || 50, 100);
       const offset = Number(req.query.offset) || 0;
-      const status = typeof req.query.status === "string" ? req.query.status as OrderStatus : undefined;
+      const status = typeof req.query.status === "string" ? (req.query.status as OrderStatus) : undefined;
       const search = typeof req.query.search === "string" ? req.query.search : undefined;
       const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
       const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
 
-      // Export to CSV
       if (req.query.export === "csv") {
         const result = await loadAdminOrders(config, 1000, 0, status, search, startDate, endDate);
         const csv = exportOrdersToCsv(result.orders);
@@ -54,10 +64,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    // PUT /api/admin/orders - Update order status
     if (req.method === "PUT") {
       const orderId = req.query.id;
-
       if (!orderId || typeof orderId !== "string") {
         res.status(400).json({ error: "Order ID required" });
         return;
@@ -70,20 +78,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
 
       const result = await updateAdminOrderStatus(config, orderId, parsed.data.status);
-      res.status(200).json(result);
-      return;
-    }
-
-    // GET /api/admin/orders?id=xxx - Get order detail
-    if (req.method === "GET" && req.query.id) {
-      const orderId = req.query.id;
-
-      if (!orderId || typeof orderId !== "string") {
-        res.status(400).json({ error: "Order ID required" });
-        return;
-      }
-
-      const result = await loadAdminOrderDetail(config, orderId);
       res.status(200).json(result);
       return;
     }

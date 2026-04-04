@@ -285,7 +285,15 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
     legacyHeaders: false,
   });
 
+  const adminLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 80,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
   app.use(baseLimiter);
+  app.use("/api/admin", adminLimiter);
 
   // ── Health ──────────────────────────────────────────────────────────────
   app.get("/api/health", (_req, res) => {
@@ -972,3 +980,5 @@ export function createPaynowApiApp(options: PaynowApiAppOptions = {}): Express {
 export function __clearPaymentStoreForTests(): void {
   paymentStore.clear();
 }
+
+

@@ -1,4 +1,10 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import { writeAdminAuditLog } from "./adminAudit";
+import {
+  assertAdminPermission,
+  createAdminClient,
+  resolveAdminContext,
+  type AdminAccessConfig,
+} from "./adminAccess";
 
 export interface AdminProductRow {
   id: string;
@@ -55,57 +61,28 @@ export class AdminCatalogError extends Error {
   }
 }
 
-interface CatalogConfig {
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  adminEmails: string[];
-  authorizationHeader?: string | string[];
-}
+type CatalogConfig = AdminAccessConfig
 
-function parseBearerToken(header?: string | string[]): string | null {
-  const value = Array.isArray(header) ? header[0] : header;
-  if (!value) return null;
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() ?? null;
-}
-
-function normalizeAdminEmails(adminEmails: string[]): string[] {
-  return adminEmails.map((email) => email.trim().toLowerCase()).filter(Boolean);
-}
-
-function createAdminClient(config: CatalogConfig) {
-  return createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-}
-
-async function requireAdminUser(config: CatalogConfig): Promise<{ admin: ReturnType<typeof createAdminClient>; user: User }> {
-  const token = parseBearerToken(config.authorizationHeader);
-  if (!token) {
-    throw new AdminCatalogError(401, "Sign in to manage catalog.");
+function mapAuthorizationError(error: unknown): never {
+  if (error instanceof Error && "status" in error && typeof error.status === "number") {
+    throw new AdminCatalogError(error.status, error.message);
   }
 
-  const admin = createAdminClient(config);
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) {
-    throw new AdminCatalogError(401, "Your session could not be verified.");
-  }
+  throw error;
+}
 
-  const allowedEmails = normalizeAdminEmails(config.adminEmails);
-  if (allowedEmails.length === 0) {
-    throw new AdminCatalogError(403, "Admin access is not configured yet. Add ADMIN_EMAILS on the server.");
+async function requireCatalogAccess(config: CatalogConfig, permission: "catalog.read" | "catalog.write") {
+  try {
+    const context = await resolveAdminContext(config);
+    assertAdminPermission(
+      context.access,
+      permission,
+      permission === "catalog.write" ? "You do not have permission to change catalogue data." : "You do not have permission to view catalogue data.",
+    );
+    return context;
+  } catch (error) {
+    mapAuthorizationError(error);
   }
-
-  const userEmail = data.user.email?.toLowerCase() ?? "";
-  if (!allowedEmails.includes(userEmail)) {
-    throw new AdminCatalogError(403, "Your account does not have admin access.");
-  }
-
-  return { admin, user: data.user };
 }
 
 function normalizeProductRow(row: Record<string, unknown>): AdminProductRow {
@@ -142,7 +119,7 @@ export async function loadAdminProducts(
   offset = 0,
   search?: string,
 ): Promise<{ products: AdminProductRow[]; total: number }> {
-  const { admin } = await requireAdminUser(config);
+  const { admin } = await requireCatalogAccess(config, "catalog.read");
 
   let query = admin
     .from("products")
@@ -158,6 +135,7 @@ export async function loadAdminProducts(
       is_active,
       created_at,
       updated_at,
+      category_id,
       product_categories!products_category_id_fkey (
         name,
         category_id
@@ -177,7 +155,6 @@ export async function loadAdminProducts(
     throw new Error("Unable to load products.");
   }
 
-  // Get total count
   let countQuery = admin.from("products").select("*", { count: "exact", head: true });
   if (search && search.trim()) {
     const searchTerm = `%${search.trim().toLowerCase()}%`;
@@ -208,7 +185,7 @@ export async function loadAdminProducts(
 }
 
 export async function loadAdminCategories(config: CatalogConfig): Promise<AdminCategoryRow[]> {
-  const { admin } = await requireAdminUser(config);
+  const { admin } = await requireCatalogAccess(config, "catalog.read");
 
   const { data, error } = await admin
     .from("product_categories")
@@ -226,21 +203,14 @@ export async function createAdminProduct(
   config: CatalogConfig,
   input: AdminProductInput,
 ): Promise<AdminProductRow> {
-  const { admin, user } = await requireAdminUser(config);
+  const { admin, user } = await requireCatalogAccess(config, "catalog.write");
 
-  // Check for duplicate code
-  const { data: existing } = await admin
-    .from("products")
-    .select("id")
-    .eq("code", input.code)
-    .single();
-
+  const { data: existing } = await admin.from("products").select("id").eq("code", input.code).single();
   if (existing) {
     throw new AdminCatalogError(400, "A product with this code already exists.");
   }
 
   const productId = `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
   const { data, error } = await admin
     .from("products")
     .insert({
@@ -261,12 +231,20 @@ export async function createAdminProduct(
     throw new AdminCatalogError(400, error?.message || "Unable to create product.");
   }
 
-  // Get category name
-  const { data: category } = await admin
-    .from("product_categories")
-    .select("name")
-    .eq("id", input.categoryId)
-    .single();
+  await writeAdminAuditLog(admin, {
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "catalog.product.create",
+    resourceType: "product",
+    resourceId: String(data.id),
+    details: {
+      productId,
+      code: input.code,
+      name: input.name,
+    },
+  });
+
+  const { data: category } = await admin.from("product_categories").select("name").eq("id", input.categoryId).single();
 
   return {
     id: String(data.id),
@@ -290,28 +268,15 @@ export async function updateAdminProduct(
   productId: string,
   input: AdminProductUpdateInput,
 ): Promise<AdminProductRow> {
-  const { admin } = await requireAdminUser(config);
+  const { admin, user } = await requireCatalogAccess(config, "catalog.write");
 
-  // Get current product
-  const { data: current } = await admin
-    .from("products")
-    .select("id, product_id, category_id")
-    .eq("id", productId)
-    .single();
-
+  const { data: current } = await admin.from("products").select("id, product_id, category_id").eq("id", productId).single();
   if (!current) {
     throw new AdminCatalogError(404, "Product not found.");
   }
 
-  // Check for duplicate code if code is being changed
   if (input.code) {
-    const { data: existing } = await admin
-      .from("products")
-      .select("id")
-      .eq("code", input.code)
-      .neq("id", productId)
-      .single();
-
+    const { data: existing } = await admin.from("products").select("id").eq("code", input.code).neq("id", productId).single();
     if (existing) {
       throw new AdminCatalogError(400, "A product with this code already exists.");
     }
@@ -327,23 +292,21 @@ export async function updateAdminProduct(
   if (input.unitPriceVat !== undefined) updateData.unit_price_vat = input.unitPriceVat;
   if (input.isActive !== undefined) updateData.is_active = input.isActive;
 
-  const { data, error } = await admin
-    .from("products")
-    .update(updateData)
-    .eq("id", productId)
-    .select()
-    .single();
-
+  const { data, error } = await admin.from("products").update(updateData).eq("id", productId).select().single();
   if (error || !data) {
     throw new AdminCatalogError(400, error?.message || "Unable to update product.");
   }
 
-  // Get category name
-  const { data: category } = await admin
-    .from("product_categories")
-    .select("name")
-    .eq("id", data.category_id)
-    .single();
+  await writeAdminAuditLog(admin, {
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "catalog.product.update",
+    resourceType: "product",
+    resourceId: productId,
+    details: input,
+  });
+
+  const { data: category } = await admin.from("product_categories").select("name").eq("id", data.category_id).single();
 
   return {
     id: String(data.id),
@@ -366,38 +329,31 @@ export async function deleteAdminProduct(
   config: CatalogConfig,
   productId: string,
 ): Promise<{ ok: boolean; message: string }> {
-  const { admin } = await requireAdminUser(config);
+  const { admin, user } = await requireCatalogAccess(config, "catalog.write");
 
-  // Check if product exists
-  const { data: current } = await admin
-    .from("products")
-    .select("id, name")
-    .eq("id", productId)
-    .single();
-
+  const { data: current } = await admin.from("products").select("id, name").eq("id", productId).single();
   if (!current) {
     throw new AdminCatalogError(404, "Product not found.");
   }
 
-  // Check if product has inventory
-  const { data: inventory } = await admin
-    .from("inventory_levels")
-    .select("id")
-    .eq("product_id", productId)
-    .single();
-
+  const { data: inventory } = await admin.from("inventory_levels").select("id").eq("product_id", productId).single();
   if (inventory) {
     throw new AdminCatalogError(400, "Cannot delete product with inventory. Remove inventory first.");
   }
 
-  const { error } = await admin
-    .from("products")
-    .delete()
-    .eq("id", productId);
-
+  const { error } = await admin.from("products").delete().eq("id", productId);
   if (error) {
     throw new AdminCatalogError(400, error.message || "Unable to delete product.");
   }
+
+  await writeAdminAuditLog(admin, {
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "catalog.product.delete",
+    resourceType: "product",
+    resourceId: productId,
+    details: { name: current.name },
+  });
 
   return { ok: true, message: `Product "${current.name}" deleted successfully.` };
 }
@@ -406,30 +362,29 @@ export async function createAdminCategory(
   config: CatalogConfig,
   name: string,
 ): Promise<AdminCategoryRow> {
-  const { admin } = await requireAdminUser(config);
+  const { admin, user } = await requireCatalogAccess(config, "catalog.write");
 
-  // Check for duplicate name
-  const { data: existing } = await admin
-    .from("product_categories")
-    .select("id")
-    .ilike("name", name)
-    .single();
-
+  const { data: existing } = await admin.from("product_categories").select("id").ilike("name", name).single();
   if (existing) {
     throw new AdminCatalogError(400, "A category with this name already exists.");
   }
 
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-
-  const { data, error } = await admin
-    .from("product_categories")
-    .insert({ name, slug })
-    .select()
-    .single();
+  const { data, error } = await admin.from("product_categories").insert({ name, slug }).select().single();
 
   if (error || !data) {
     throw new AdminCatalogError(400, error?.message || "Unable to create category.");
   }
 
+  await writeAdminAuditLog(admin, {
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "catalog.category.create",
+    resourceType: "category",
+    resourceId: String(data.id),
+    details: { name, slug },
+  });
+
   return normalizeCategoryRow(data as Record<string, unknown>);
 }
+

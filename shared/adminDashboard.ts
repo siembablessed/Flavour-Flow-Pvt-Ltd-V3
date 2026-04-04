@@ -1,4 +1,10 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import {
+  type AdminAccessProfile,
+  createAdminClient,
+  hasAdminPermission,
+  resolveAdminContext,
+  type AdminAccessConfig,
+} from "./adminAccess";
 
 export interface AdminPaymentRow {
   id: string;
@@ -25,10 +31,7 @@ export interface AdminDashboardSummary {
 export interface AdminDashboardPayload {
   summary: AdminDashboardSummary;
   payments: AdminPaymentRow[];
-  adminUser: {
-    id: string;
-    email: string | null;
-  };
+  adminUser: AdminAccessProfile;
 }
 
 export class AdminAccessError extends Error {
@@ -40,12 +43,7 @@ export class AdminAccessError extends Error {
   }
 }
 
-interface DashboardConfig {
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  adminEmails: string[];
-  authorizationHeader?: string | string[];
-}
+type DashboardConfig = AdminAccessConfig
 
 interface RawOrder {
   id: string;
@@ -67,120 +65,107 @@ interface RawOrder {
   }>;
 }
 
-function parseBearerToken(header?: string | string[]): string | null {
-  const value = Array.isArray(header) ? header[0] : header;
-  if (!value) return null;
-
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
+function emptySummary(): AdminDashboardSummary {
+  return {
+    totalOrders: 0,
+    paidOrders: 0,
+    pendingOrders: 0,
+    totalRevenue: 0,
+    totalCustomers: 0,
+  };
 }
 
-function normalizeAdminEmails(adminEmails: string[]): string[] {
-  return adminEmails.map((email) => email.trim().toLowerCase()).filter(Boolean);
-}
-
-async function requireAdminUser(config: DashboardConfig): Promise<User> {
-  const token = parseBearerToken(config.authorizationHeader);
-  if (!token) {
-    throw new AdminAccessError(401, "Sign in to access the admin dashboard.");
+function mapAuthorizationError(error: unknown): never {
+  if (error instanceof Error && "status" in error && typeof error.status === "number") {
+    throw new AdminAccessError(error.status, error.message);
   }
 
-  const admin = createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) {
-    throw new AdminAccessError(401, "Your session could not be verified.");
-  }
-
-  const allowedEmails = normalizeAdminEmails(config.adminEmails);
-  if (allowedEmails.length === 0) {
-    throw new AdminAccessError(403, "Admin access is not configured yet. Add ADMIN_EMAILS on the server.");
-  }
-
-  const userEmail = data.user.email?.toLowerCase() ?? "";
-  if (!allowedEmails.includes(userEmail)) {
-    throw new AdminAccessError(403, "Your account does not have admin access.");
-  }
-
-  return data.user;
+  throw error;
 }
 
 export async function loadAdminDashboard(config: DashboardConfig): Promise<AdminDashboardPayload> {
-  const user = await requireAdminUser(config);
-  const admin = createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
+  try {
+    const { user, access } = await resolveAdminContext(config);
 
-  const { data, error } = await admin
-    .from("orders")
-    .select(`
-      id,
-      order_number,
-      customer_email,
-      total,
-      status,
-      created_at,
-      paid_at,
-      order_payments (
+    if (!hasAdminPermission(access, "dashboard.read")) {
+      return {
+        summary: emptySummary(),
+        payments: [],
+        adminUser: access,
+      };
+    }
+
+    const admin = createAdminClient(config);
+    const { data, error } = await admin
+      .from("orders")
+      .select(`
         id,
-        reference,
-        amount,
+        order_number,
+        customer_email,
+        total,
         status,
-        payment_method,
         created_at,
         paid_at,
-        provider_status
-      )
-    `)
-    .order("created_at", { ascending: false })
-    .limit(50);
+        order_payments (
+          id,
+          reference,
+          amount,
+          status,
+          payment_method,
+          created_at,
+          paid_at,
+          provider_status
+        )
+      `)
+      .order("created_at", { ascending: false })
+      .limit(50);
 
-  if (error) {
-    throw new Error("Unable to load admin payment data.");
+    if (error) {
+      throw new Error("Unable to load admin payment data.");
+    }
+
+    const orders = (data as RawOrder[] | null) ?? [];
+    const canSeePayments = hasAdminPermission(access, "payments.read");
+    const payments = canSeePayments
+      ? orders.flatMap((order) =>
+          (order.order_payments ?? []).map((payment) => ({
+            id: `${order.id}-${payment.id}`,
+            orderNumber: order.order_number,
+            customerEmail: order.customer_email,
+            amount: Number(payment.amount ?? order.total ?? 0),
+            orderStatus: order.status,
+            paymentStatus: payment.status,
+            paymentMethod: payment.payment_method,
+            reference: payment.reference,
+            createdAt: payment.created_at ?? order.created_at,
+            paidAt: payment.paid_at ?? order.paid_at,
+            providerStatus: payment.provider_status,
+          })),
+        )
+      : [];
+
+    const paidOrders = orders.filter((order) => order.status === "paid");
+    const uniqueCustomers = new Set(orders.map((order) => order.customer_email?.trim().toLowerCase()).filter(Boolean));
+
+    return {
+      summary: canSeePayments
+        ? {
+            totalOrders: orders.length,
+            paidOrders: paidOrders.length,
+            pendingOrders: orders.filter((order) => order.status === "pending_payment").length,
+            totalRevenue: paidOrders.reduce((sum, order) => sum + Number(order.total ?? 0), 0),
+            totalCustomers: uniqueCustomers.size,
+          }
+        : emptySummary(),
+      payments,
+      adminUser: {
+        ...access,
+        id: access.id || user.id,
+        email: access.email ?? user.email ?? null,
+      },
+    };
+  } catch (error) {
+    mapAuthorizationError(error);
   }
-
-  const orders = (data as RawOrder[] | null) ?? [];
-  const payments = orders.flatMap((order) =>
-    (order.order_payments ?? []).map((payment) => ({
-      id: `${order.id}-${payment.id}`,
-      orderNumber: order.order_number,
-      customerEmail: order.customer_email,
-      amount: Number(payment.amount ?? order.total ?? 0),
-      orderStatus: order.status,
-      paymentStatus: payment.status,
-      paymentMethod: payment.payment_method,
-      reference: payment.reference,
-      createdAt: payment.created_at ?? order.created_at,
-      paidAt: payment.paid_at ?? order.paid_at,
-      providerStatus: payment.provider_status,
-    })),
-  );
-
-  const paidOrders = orders.filter((order) => order.status === "paid");
-  const uniqueCustomers = new Set(orders.map((order) => order.customer_email?.trim().toLowerCase()).filter(Boolean));
-
-  return {
-    summary: {
-      totalOrders: orders.length,
-      paidOrders: paidOrders.length,
-      pendingOrders: orders.filter((order) => order.status === "pending_payment").length,
-      totalRevenue: paidOrders.reduce((sum, order) => sum + Number(order.total ?? 0), 0),
-      totalCustomers: uniqueCustomers.size,
-    },
-    payments,
-    adminUser: {
-      id: user.id,
-      email: user.email ?? null,
-    },
-  };
 }
+

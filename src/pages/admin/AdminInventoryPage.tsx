@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { ArrowUpDown } from "lucide-react";
+import { hasAdminPermission } from "../../../shared/adminAccess";
 import AdminInventoryManager from "@/components/AdminInventoryManager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import AdminAccessNotice from "./AdminAccessNotice";
 import { useAdminOutlet } from "./useAdminOutlet";
 import { formatDate } from "./adminFormat";
 import type { InventorySnapshotRow } from "@/hooks/useInventorySnapshot";
@@ -12,13 +15,17 @@ import type { InventorySnapshotRow } from "@/hooks/useInventorySnapshot";
 type InventorySortKey = "name" | "location" | "onHand" | "reserved" | "available";
 
 export default function AdminInventoryPage() {
-  const { inventory, products, accessToken, refetchAll } = useAdminOutlet();
+  const { inventory, products, accessToken, refetchAll, access } = useAdminOutlet();
+  const canReadInventory = hasAdminPermission(access, "inventory.read");
+  const canWriteInventory = hasAdminPermission(access, "inventory.write");
+
   const [inventoryPage, setInventoryPage] = useState(1);
   const [inventorySearch, setInventorySearch] = useState("");
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
   const [sortBy, setSortBy] = useState<InventorySortKey>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [locationsPage, setLocationsPage] = useState(1);
+
 
   const locations = useMemo(() => {
     const grouped = new Map<string, { name: string; lines: number; available: number; reserved: number }>();
@@ -86,6 +93,10 @@ export default function AdminInventoryPage() {
     setSortDirection("asc");
   };
 
+  if (!canReadInventory) {
+    return <AdminAccessNotice title="Inventory restricted" description="Your role does not include inventory visibility." />;
+  }
+
   return (
     <div className="space-y-6">
       <AdminInventoryManager
@@ -93,6 +104,7 @@ export default function AdminInventoryPage() {
         products={products}
         inventory={inventory as unknown as InventorySnapshotRow[]}
         onInventoryChanged={refetchAll}
+        canManageInventory={canWriteInventory}
       />
 
       <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
@@ -179,82 +191,83 @@ export default function AdminInventoryPage() {
                   placeholder="Search product or location"
                   className="w-full rounded-full border border-border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/20 lg:max-w-sm"
                 />
-                <select
+                <NativeSelect
                   value={density}
                   onChange={(e) => setDensity(e.target.value as "comfortable" | "compact")}
-                  className="rounded-full border border-border bg-background px-3 py-2 text-sm"
+                  size="compact"
+                  className="rounded-full py-2"
                 >
                   <option value="comfortable">Comfortable</option>
                   <option value="compact">Compact</option>
-                </select>
+                </NativeSelect>
               </div>
             </div>
 
             <div className="max-h-[70vh] overflow-auto">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-card">
-                <TableRow>
-                  <TableHead>
-                    <button className="inline-flex items-center gap-1" onClick={() => toggleSort("name")}>
-                      Product
-                      <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </TableHead>
-                  <TableHead>
-                    <button className="inline-flex items-center gap-1" onClick={() => toggleSort("location")}>
-                      Location
-                      <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </TableHead>
-                  <TableHead>
-                    <button className="inline-flex items-center gap-1" onClick={() => toggleSort("onHand")}>
-                      On hand
-                      <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </TableHead>
-                  <TableHead>
-                    <button className="inline-flex items-center gap-1" onClick={() => toggleSort("reserved")}>
-                      Reserved
-                      <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </TableHead>
-                  <TableHead>
-                    <button className="inline-flex items-center gap-1" onClick={() => toggleSort("available")}>
-                      Available
-                      <ArrowUpDown className="h-3.5 w-3.5" />
-                    </button>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inventoryPageRows.map((row) => (
-                  <TableRow key={`${row.product_id}-${row.location_code}`}>
-                    <TableCell className={rowPadding}>
-                      <p className="font-semibold text-foreground">{row.name}</p>
-                      <p className="text-xs text-foreground/50">Updated {formatDate(row.updated_at)}</p>
-                    </TableCell>
-                    <TableCell className={rowPadding}>
-                      <p className="font-semibold text-foreground">{row.location_name}</p>
-                      <p className="text-xs uppercase tracking-[0.18em] text-primary">{row.location_code}</p>
-                    </TableCell>
-                    <TableCell className={rowPadding}>{row.on_hand_cases.toFixed(0)}</TableCell>
-                    <TableCell className={rowPadding}>{row.reserved_cases.toFixed(0)}</TableCell>
-                    <TableCell className={rowPadding}>
-                      <Badge className={row.available_cases <= row.reorder_level_cases ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}>
-                        {row.available_cases.toFixed(0)} cases
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!filteredInventoryRows.length && (
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-foreground/55">
-                      No inventory rows match your search.
-                    </TableCell>
+                    <TableHead>
+                      <button className="inline-flex items-center gap-1" onClick={() => toggleSort("name")}>
+                        Product
+                        <ArrowUpDown className="h-3.5 w-3.5" />
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button className="inline-flex items-center gap-1" onClick={() => toggleSort("location")}>
+                        Location
+                        <ArrowUpDown className="h-3.5 w-3.5" />
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button className="inline-flex items-center gap-1" onClick={() => toggleSort("onHand")}>
+                        On hand
+                        <ArrowUpDown className="h-3.5 w-3.5" />
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button className="inline-flex items-center gap-1" onClick={() => toggleSort("reserved")}>
+                        Reserved
+                        <ArrowUpDown className="h-3.5 w-3.5" />
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button className="inline-flex items-center gap-1" onClick={() => toggleSort("available")}>
+                        Available
+                        <ArrowUpDown className="h-3.5 w-3.5" />
+                      </button>
+                    </TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {inventoryPageRows.map((row) => (
+                    <TableRow key={`${row.product_id}-${row.location_code}`}>
+                      <TableCell className={rowPadding}>
+                        <p className="font-semibold text-foreground">{row.name}</p>
+                        <p className="text-xs text-foreground/50">Updated {formatDate(row.updated_at)}</p>
+                      </TableCell>
+                      <TableCell className={rowPadding}>
+                        <p className="font-semibold text-foreground">{row.location_name}</p>
+                        <p className="text-xs uppercase tracking-[0.18em] text-primary">{row.location_code}</p>
+                      </TableCell>
+                      <TableCell className={rowPadding}>{row.on_hand_cases.toFixed(0)}</TableCell>
+                      <TableCell className={rowPadding}>{row.reserved_cases.toFixed(0)}</TableCell>
+                      <TableCell className={rowPadding}>
+                        <Badge className={row.available_cases <= row.reorder_level_cases ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}>
+                          {row.available_cases.toFixed(0)} cases
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!filteredInventoryRows.length && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-10 text-center text-sm text-foreground/55">
+                        No inventory rows match your search.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
 
             <div className="flex flex-col gap-3 border-t border-border bg-muted/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -288,4 +301,5 @@ export default function AdminInventoryPage() {
     </div>
   );
 }
+
 

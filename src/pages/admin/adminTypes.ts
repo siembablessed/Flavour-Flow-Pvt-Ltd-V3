@@ -1,8 +1,10 @@
 import type { AdminDashboardPayload } from "../../../shared/adminDashboard";
+import type { AdminAccessProfile } from "../../../shared/adminAccess";
 import type { Product } from "@/data/products";
 
 export type AdminWorkspaceData = {
   accessToken: string | null;
+  access: AdminAccessProfile | null;
   products: Product[];
   inventory: Array<{
     product_id: string;
@@ -20,4 +22,3 @@ export type AdminWorkspaceData = {
   paymentsError: unknown;
   refetchAll: () => void;
 };
-

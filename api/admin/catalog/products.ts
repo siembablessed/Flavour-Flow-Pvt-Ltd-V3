@@ -4,7 +4,6 @@ import { getEnv } from "../../_lib/env.js";
 import {
   AdminCatalogError,
   loadAdminProducts,
-  loadAdminCategories,
   createAdminProduct,
   updateAdminProduct,
   deleteAdminProduct,
@@ -53,7 +52,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       authorizationHeader: req.headers.authorization,
     };
 
-    // GET /api/admin/catalog/products - List products
     if (req.method === "GET") {
       const limit = Math.min(Number(req.query.limit) || 50, 100);
       const offset = Number(req.query.offset) || 0;
@@ -64,20 +62,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    // POST /api/admin/catalog/products - Create product
-    if (req.method === "POST") {
-      const parsed = productSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({ error: "Invalid product payload", details: parsed.error.flatten().fieldErrors });
-        return;
-      }
-
-      const result = await createAdminProduct(config, parsed.data);
-      res.status(201).json(result);
-      return;
-    }
-
-    // POST /api/admin/catalog/products?action=create-category - Create category
     if (req.method === "POST" && req.query.action === "create-category") {
       const parsed = categorySchema.safeParse(req.body);
       if (!parsed.success) {
@@ -90,10 +74,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    // PUT /api/admin/catalog/products - Update product
+    if (req.method === "POST") {
+      const parsed = productSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid product payload", details: parsed.error.flatten().fieldErrors });
+        return;
+      }
+
+      const result = await createAdminProduct(config, parsed.data);
+      res.status(201).json(result);
+      return;
+    }
+
     if (req.method === "PUT") {
       const productId = req.query.id;
-
       if (!productId) {
         res.status(400).json({ error: "Product ID required" });
         return;
@@ -110,10 +104,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    // DELETE /api/admin/catalog/products - Delete product
     if (req.method === "DELETE") {
       const productId = req.query.id;
-
       if (!productId) {
         res.status(400).json({ error: "Product ID required" });
         return;

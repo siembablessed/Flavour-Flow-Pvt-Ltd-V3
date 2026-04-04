@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+﻿<<<<<<< HEAD
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -283,7 +283,7 @@ const AdminDashboard = () => {
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{product.category}</p>
                             <h3 className="mt-1 text-base font-bold text-foreground">{product.name}</h3>
-                            <p className="mt-1 text-sm text-foreground/50">{product.code} • {product.pack}</p>
+                            <p className="mt-1 text-sm text-foreground/50">{product.code} â€¢ {product.pack}</p>
                           </div>
                           <Badge className={product.available <= 0 ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                             {product.stockState}
@@ -317,7 +317,7 @@ const AdminDashboard = () => {
                       <p className="text-sm text-foreground/55">Latest payment activity.</p>
                     </div>
                     <Button variant="ghost" size="sm" className="text-accent" onClick={() => document.querySelector('[data-value="payments"]')?.dispatchEvent(new MouseEvent('click', {bubbles: true}))}>
-                      View all →
+                      View all â†’
                     </Button>
                   </div>
 
@@ -377,7 +377,7 @@ const AdminDashboard = () => {
                 </div>
                 <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-muted/20">
                   <div className="text-sm text-foreground/60">
-                    {filteredProducts.length} items • Page {productPage + 1}
+                    {filteredProducts.length} items â€¢ Page {productPage + 1}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" disabled={productPage === 0} onClick={() => setProductPage(p => p - 1)}>Prev</Button>
@@ -399,7 +399,7 @@ const AdminDashboard = () => {
                       <TableRow key={product.id} className="h-10">
                         <TableCell className="py-1">
                           <p className="font-semibold">{product.name}</p>
-                          <p className="text-xs text-foreground/50">{product.category} • {product.pack}</p>
+                          <p className="text-xs text-foreground/50">{product.category} â€¢ {product.pack}</p>
                         </TableCell>
                         <TableCell className="py-1 font-mono text-xs text-foreground/65">{product.code}</TableCell>
                         <TableCell className="py-1">
@@ -434,7 +434,7 @@ const AdminDashboard = () => {
                   <p className="text-xs text-foreground/55">Available inventory at each location.</p>
                 </div>
                 <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-muted/20">
-                  <div className="text-sm text-foreground/60">{inventory.length} rows • Page {inventoryPage + 1}</div>
+                  <div className="text-sm text-foreground/60">{inventory.length} rows â€¢ Page {inventoryPage + 1}</div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" disabled={inventoryPage === 0} onClick={() => setInventoryPage(p => p - 1)}>Prev</Button>
                     <Button variant="outline" size="sm" disabled={(inventoryPage + 1) * PAGE_SIZE >= inventory.length} onClick={() => setInventoryPage(p => p + 1)}>Next</Button>
@@ -500,7 +500,7 @@ const AdminDashboard = () => {
                     <select
                       value={paymentStatusFilter}
                       onChange={(e) => { setPaymentStatusFilter(e.target.value); setPaymentPage(0); }}
-                      className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      className="rounded-lg border border-border bg-background px-3 py-2 pr-10 text-sm"
                     >
                       <option value="all">All statuses</option>
                       <option value="paid">Paid</option>
@@ -541,7 +541,7 @@ const AdminDashboard = () => {
                     {/* Compact pagination controls */}
                     <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-muted/20">
                       <div className="text-sm text-foreground/60">
-                        {filteredPayments.length} total • Showing {paymentPage * PAGE_SIZE + 1}-{Math.min((paymentPage + 1) * PAGE_SIZE, filteredPayments.length)}
+                        {filteredPayments.length} total â€¢ Showing {paymentPage * PAGE_SIZE + 1}-{Math.min((paymentPage + 1) * PAGE_SIZE, filteredPayments.length)}
                       </div>
                       <div className="flex gap-2">
                         <Button
@@ -622,4 +622,6 @@ import AdminLayout from "./admin/AdminLayout";
 
 // Backwards-compatible entrypoint for older links.
 export default AdminLayout;
+
+
 

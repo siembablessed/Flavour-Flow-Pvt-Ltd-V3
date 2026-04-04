@@ -1,4 +1,10 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import { writeAdminAuditLog } from "./adminAudit";
+import {
+  assertAdminPermission,
+  createAdminClient,
+  resolveAdminContext,
+  type AdminAccessConfig,
+} from "./adminAccess";
 
 export type InventoryMovementType =
   | "stock_in"
@@ -29,12 +35,7 @@ export interface AdminInventoryMutationResult {
   message: string;
 }
 
-interface InventoryConfig {
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  adminEmails: string[];
-  authorizationHeader?: string | string[];
-}
+type InventoryConfig = AdminAccessConfig
 
 interface InventoryMovementInput {
   movementType: InventoryMovementType;
@@ -61,50 +62,26 @@ export class AdminInventoryError extends Error {
   }
 }
 
-function parseBearerToken(header?: string | string[]): string | null {
-  const value = Array.isArray(header) ? header[0] : header;
-  if (!value) return null;
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
+function mapAuthorizationError(error: unknown): never {
+  if (error instanceof Error && "status" in error && typeof error.status === "number") {
+    throw new AdminInventoryError(error.status, error.message);
+  }
+
+  throw error;
 }
 
-function normalizeAdminEmails(adminEmails: string[]): string[] {
-  return adminEmails.map((email) => email.trim().toLowerCase()).filter(Boolean);
-}
-
-function createAdminClient(config: InventoryConfig) {
-  return createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-}
-
-async function requireAdminUser(config: InventoryConfig): Promise<{ admin: ReturnType<typeof createAdminClient>; user: User }> {
-  const token = parseBearerToken(config.authorizationHeader);
-  if (!token) {
-    throw new AdminInventoryError(401, "Sign in to manage inventory.");
+async function requireInventoryAccess(config: InventoryConfig, permission: "inventory.read" | "inventory.write") {
+  try {
+    const context = await resolveAdminContext(config);
+    assertAdminPermission(
+      context.access,
+      permission,
+      permission === "inventory.write" ? "You do not have permission to change inventory." : "You do not have permission to view inventory.",
+    );
+    return context;
+  } catch (error) {
+    mapAuthorizationError(error);
   }
-
-  const admin = createAdminClient(config);
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) {
-    throw new AdminInventoryError(401, "Your session could not be verified.");
-  }
-
-  const allowedEmails = normalizeAdminEmails(config.adminEmails);
-  if (allowedEmails.length === 0) {
-    throw new AdminInventoryError(403, "Admin access is not configured yet. Add ADMIN_EMAILS on the server.");
-  }
-
-  const userEmail = data.user.email?.toLowerCase() ?? "";
-  if (!allowedEmails.includes(userEmail)) {
-    throw new AdminInventoryError(403, "Your account does not have admin access.");
-  }
-
-  return { admin, user: data.user };
 }
 
 async function resolveInventoryRefs(admin: ReturnType<typeof createAdminClient>, productId: string, locationCode: string) {
@@ -128,7 +105,7 @@ export async function loadAdminInventoryMovements(
   config: InventoryConfig,
   limit = 25,
 ): Promise<AdminInventoryMovementRow[]> {
-  const { admin } = await requireAdminUser(config);
+  const { admin } = await requireInventoryAccess(config, "inventory.read");
   const { data, error } = await admin
     .from("inventory_movements")
     .select(`
@@ -183,7 +160,7 @@ export async function recordAdminInventoryMovement(
   config: InventoryConfig,
   input: InventoryMovementInput,
 ): Promise<AdminInventoryMutationResult> {
-  const { admin, user } = await requireAdminUser(config);
+  const { admin, user } = await requireInventoryAccess(config, "inventory.write");
   const { product, location } = await resolveInventoryRefs(admin, input.productId, input.locationCode);
 
   const { error } = await admin.rpc("record_inventory_movement", {
@@ -201,6 +178,15 @@ export async function recordAdminInventoryMovement(
     throw new AdminInventoryError(400, error.message || "Unable to record inventory movement.");
   }
 
+  await writeAdminAuditLog(admin, {
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "inventory.movement.record",
+    resourceType: "inventory_movement",
+    resourceId: `${product.id}:${location.id}`,
+    details: input,
+  });
+
   return {
     ok: true,
     message: `${input.movementType.replace("_", " ")} recorded for ${product.name} at ${location.name}.`,
@@ -211,7 +197,7 @@ export async function updateAdminReorderLevel(
   config: InventoryConfig,
   input: ReorderLevelInput,
 ): Promise<AdminInventoryMutationResult> {
-  const { admin } = await requireAdminUser(config);
+  const { admin, user } = await requireInventoryAccess(config, "inventory.write");
   const { product, location } = await resolveInventoryRefs(admin, input.productId, input.locationCode);
 
   const { error } = await admin.from("inventory_levels").upsert(
@@ -227,8 +213,18 @@ export async function updateAdminReorderLevel(
     throw new AdminInventoryError(400, error.message || "Unable to update reorder level.");
   }
 
+  await writeAdminAuditLog(admin, {
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "inventory.reorder_level.update",
+    resourceType: "inventory_level",
+    resourceId: `${product.id}:${location.id}`,
+    details: input,
+  });
+
   return {
     ok: true,
     message: `Reorder level updated for ${product.name} at ${location.name}.`,
   };
 }
+

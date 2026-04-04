@@ -1,4 +1,9 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import { writeAdminAuditLog } from "./adminAudit";
+import {
+  assertAdminPermission,
+  resolveAdminContext,
+  type AdminAccessConfig,
+} from "./adminAccess";
 
 export type OrderStatus = "pending_payment" | "paid" | "payment_failed" | "cancelled" | "fulfilled";
 
@@ -52,57 +57,28 @@ export class AdminOrdersError extends Error {
   }
 }
 
-interface OrdersConfig {
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  adminEmails: string[];
-  authorizationHeader?: string | string[];
-}
+type OrdersConfig = AdminAccessConfig
 
-function parseBearerToken(header?: string | string[]): string | null {
-  const value = Array.isArray(header) ? header[0] : header;
-  if (!value) return null;
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() ?? null;
-}
-
-function normalizeAdminEmails(adminEmails: string[]): string[] {
-  return adminEmails.map((email) => email.trim().toLowerCase()).filter(Boolean);
-}
-
-function createAdminClient(config: OrdersConfig) {
-  return createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-}
-
-async function requireAdminUser(config: OrdersConfig): Promise<{ admin: ReturnType<typeof createAdminClient>; user: User }> {
-  const token = parseBearerToken(config.authorizationHeader);
-  if (!token) {
-    throw new AdminOrdersError(401, "Sign in to manage orders.");
+function mapAuthorizationError(error: unknown): never {
+  if (error instanceof Error && "status" in error && typeof error.status === "number") {
+    throw new AdminOrdersError(error.status, error.message);
   }
 
-  const admin = createAdminClient(config);
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) {
-    throw new AdminOrdersError(401, "Your session could not be verified.");
-  }
+  throw error;
+}
 
-  const allowedEmails = normalizeAdminEmails(config.adminEmails);
-  if (allowedEmails.length === 0) {
-    throw new AdminOrdersError(403, "Admin access is not configured yet. Add ADMIN_EMAILS on the server.");
+async function requireOrdersAccess(config: OrdersConfig, permission: "orders.read" | "orders.write") {
+  try {
+    const context = await resolveAdminContext(config);
+    assertAdminPermission(
+      context.access,
+      permission,
+      permission === "orders.write" ? "You do not have permission to change orders." : "You do not have permission to view orders.",
+    );
+    return context;
+  } catch (error) {
+    mapAuthorizationError(error);
   }
-
-  const userEmail = data.user.email?.toLowerCase() ?? "";
-  if (!allowedEmails.includes(userEmail)) {
-    throw new AdminOrdersError(403, "Your account does not have admin access.");
-  }
-
-  return { admin, user: data.user };
 }
 
 function normalizeOrderRow(row: Record<string, unknown>): AdminOrderRow {
@@ -146,8 +122,7 @@ export function exportOrdersToCsv(orders: AdminOrderRow[]): string {
     order.paidAt ?? "",
   ]);
 
-  const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-  return csvContent;
+  return [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
 }
 
 export async function loadAdminOrders(
@@ -157,9 +132,9 @@ export async function loadAdminOrders(
   status?: OrderStatus,
   search?: string,
   startDate?: string,
-  endDate?: string
+  endDate?: string,
 ): Promise<AdminOrderListResponse> {
-  const { admin } = await requireAdminUser(config);
+  const { admin } = await requireOrdersAccess(config, "orders.read");
 
   let query = admin
     .from("orders")
@@ -167,38 +142,34 @@ export async function loadAdminOrders(
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (status && status !== "pending_payment" && status !== "paid") {
+  if (status) {
     query = query.eq("status", status);
   }
-
   if (startDate) {
     query = query.gte("created_at", startDate);
   }
   if (endDate) {
-    query = query.lte("created_at", endDate + "T23:59:59.999Z");
+    query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
   }
-
   if (search && search.trim()) {
     const searchTerm = `%${search.trim().toLowerCase()}%`;
     query = query.or(`order_number.ilike.${searchTerm},customer_email.ilike.${searchTerm}`);
   }
 
   const { data, error } = await query;
-
   if (error) {
     throw new Error("Unable to load orders.");
   }
 
-  // Get total count
   let countQuery = admin.from("orders").select("*", { count: "exact", head: true });
-  if (status && status !== "pending_payment" && status !== "paid") {
+  if (status) {
     countQuery = countQuery.eq("status", status);
   }
   if (startDate) {
     countQuery = countQuery.gte("created_at", startDate);
   }
   if (endDate) {
-    countQuery = countQuery.lte("created_at", endDate + "T23:59:59.999Z");
+    countQuery = countQuery.lte("created_at", `${endDate}T23:59:59.999Z`);
   }
   if (search && search.trim()) {
     const searchTerm = `%${search.trim().toLowerCase()}%`;
@@ -206,15 +177,15 @@ export async function loadAdminOrders(
   }
   const { count } = await countQuery;
 
-  // Get summary
   let summaryQuery = admin.from("orders").select("status, total, paid_at");
   if (startDate) {
     summaryQuery = summaryQuery.gte("created_at", startDate);
   }
   if (endDate) {
-    summaryQuery = summaryQuery.lte("created_at", endDate + "T23:59:59.999Z");
+    summaryQuery = summaryQuery.lte("created_at", `${endDate}T23:59:59.999Z`);
   }
   const { data: summaryData } = await summaryQuery;
+
   const summary = {
     totalOrders: summaryData?.length ?? 0,
     paidOrders: summaryData?.filter((o) => o.status === "paid").length ?? 0,
@@ -223,17 +194,15 @@ export async function loadAdminOrders(
   };
 
   const orders = ((data as Array<Record<string, unknown>>) ?? []).map(normalizeOrderRow);
-
   return { orders, total: count ?? 0, summary };
 }
 
 export async function loadAdminOrderDetail(
   config: OrdersConfig,
-  orderId: string
+  orderId: string,
 ): Promise<AdminOrderDetailRow> {
-  const { admin } = await requireAdminUser(config);
+  const { admin } = await requireOrdersAccess(config, "orders.read");
 
-  // Get order
   const { data: orderData, error: orderError } = await admin
     .from("orders")
     .select("id, order_number, customer_email, currency, subtotal, total, status, payment_reference, created_at, updated_at, paid_at")
@@ -244,7 +213,6 @@ export async function loadAdminOrderDetail(
     throw new AdminOrdersError(404, "Order not found.");
   }
 
-  // Get order items
   const { data: itemsData } = await admin
     .from("order_items")
     .select("id, order_id, product_id, product_name, pack, unit_case_price, quantity, line_total, created_at")
@@ -260,22 +228,15 @@ export async function loadAdminOrderDetail(
 export async function updateAdminOrderStatus(
   config: OrdersConfig,
   orderId: string,
-  newStatus: OrderStatus
+  newStatus: OrderStatus,
 ): Promise<AdminOrderRow> {
-  const { admin } = await requireAdminUser(config);
+  const { admin, user } = await requireOrdersAccess(config, "orders.write");
 
-  // Check if order exists
-  const { data: current } = await admin
-    .from("orders")
-    .select("id, order_number, status, paid_at")
-    .eq("id", orderId)
-    .single();
-
+  const { data: current } = await admin.from("orders").select("id, order_number, status, paid_at").eq("id", orderId).single();
   if (!current) {
     throw new AdminOrdersError(404, "Order not found.");
   }
 
-  // Only allow certain status transitions
   const currentStatus = String(current.status);
   const allowedTransitions: Record<string, string[]> = {
     pending_payment: ["paid", "cancelled"],
@@ -294,16 +255,23 @@ export async function updateAdminOrderStatus(
     updateData.paid_at = new Date().toISOString();
   }
 
-  const { data, error } = await admin
-    .from("orders")
-    .update(updateData)
-    .eq("id", orderId)
-    .select()
-    .single();
-
+  const { data, error } = await admin.from("orders").update(updateData).eq("id", orderId).select().single();
   if (error || !data) {
     throw new AdminOrdersError(400, error?.message || "Unable to update order status.");
   }
 
+  await writeAdminAuditLog(admin, {
+    actorId: user.id,
+    actorEmail: user.email ?? null,
+    action: "orders.status.update",
+    resourceType: "order",
+    resourceId: orderId,
+    details: {
+      from: currentStatus,
+      to: newStatus,
+    },
+  });
+
   return normalizeOrderRow(data as Record<string, unknown>);
 }
+

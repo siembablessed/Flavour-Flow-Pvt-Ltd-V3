@@ -21,6 +21,15 @@ export interface ReorderLevelInput {
   reorderLevelCases: number;
 }
 
+class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function parseJson<T>(response: Response, fallback: string): Promise<T> {
   const payload = (await response.json().catch(() => null)) as { error?: string } | T | null;
 
@@ -28,7 +37,7 @@ async function parseJson<T>(response: Response, fallback: string): Promise<T> {
     const message = payload && typeof payload === "object" && payload !== null && "error" in payload
       ? String((payload as { error?: string }).error || fallback)
       : fallback;
-    throw new Error(message);
+    throw new ApiError(response.status, message);
   }
 
   return payload as T;

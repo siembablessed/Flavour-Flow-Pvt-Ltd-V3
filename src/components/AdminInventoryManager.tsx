@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { Product } from "@/data/products";
@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const movementLabels: Record<InventoryMovementInput["movementType"], string> = {
@@ -35,9 +36,10 @@ interface AdminInventoryManagerProps {
   products: Product[];
   inventory: InventorySnapshotRow[];
   onInventoryChanged: () => void;
+  canManageInventory: boolean;
 }
 
-const AdminInventoryManager = ({ accessToken, products, inventory, onInventoryChanged }: AdminInventoryManagerProps) => {
+const AdminInventoryManager = ({ accessToken, products, inventory, onInventoryChanged, canManageInventory }: AdminInventoryManagerProps) => {
   const queryClient = useQueryClient();
   const locations = useMemo(
     () => Array.from(new Map(inventory.map((row) => [row.location_code, row.location_name])).entries()).map(([code, name]) => ({ code, name })),
@@ -114,6 +116,10 @@ const AdminInventoryManager = ({ accessToken, products, inventory, onInventoryCh
   });
 
   const handleMovementSubmit = () => {
+    if (!canManageInventory) {
+      toast.error("Your role is read-only for inventory");
+      return;
+    }
     if (!accessToken) {
       toast.error("Sign in with an admin account to manage inventory");
       return;
@@ -135,6 +141,10 @@ const AdminInventoryManager = ({ accessToken, products, inventory, onInventoryCh
   };
 
   const handleReorderSubmit = () => {
+    if (!canManageInventory) {
+      toast.error("Your role is read-only for inventory");
+      return;
+    }
     if (!accessToken) {
       toast.error("Sign in with an admin account to manage inventory");
       return;
@@ -159,80 +169,92 @@ const AdminInventoryManager = ({ accessToken, products, inventory, onInventoryCh
         <CardContent className="p-0">
           <div className="border-b border-border bg-muted/30 px-6 py-4">
             <h2 className="text-xl font-bold text-foreground">Inventory controls</h2>
-            <p className="text-sm text-foreground/55">Receive, dispatch, reserve, release, and adjust stock without leaving the dashboard.</p>
+            <p className="text-sm text-foreground/55">
+              {canManageInventory
+                ? "Receive, dispatch, reserve, release, and adjust stock without leaving the dashboard."
+                : "This role can review inventory, but stock controls are read-only."}
+            </p>
           </div>
 
-          <div className="grid gap-6 p-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <h3 className="text-base font-semibold text-foreground">Record stock movement</h3>
-              <div className="mt-4 grid gap-4">
-                <label className="grid gap-2 text-sm">
-                  <span className="text-foreground/65">Product</span>
-                  <select value={productId} onChange={(e) => setProductId(e.target.value)} className="rounded-xl border border-border bg-background px-3 py-2.5">
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>{product.name} � {product.code}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="grid gap-4 sm:grid-cols-2">
+          {canManageInventory ? (
+            <div className="grid gap-6 p-6 lg:grid-cols-2">
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <h3 className="text-base font-semibold text-foreground">Record stock movement</h3>
+                <div className="mt-4 grid gap-4">
                   <label className="grid gap-2 text-sm">
-                    <span className="text-foreground/65">Location</span>
-                    <select value={locationCode} onChange={(e) => setLocationCode(e.target.value)} className="rounded-xl border border-border bg-background px-3 py-2.5">
-                      {locations.map((location) => (
-                        <option key={location.code} value={location.code}>{location.name}</option>
+                    <span className="text-foreground/65">Product</span>
+                    <NativeSelect value={productId} onChange={(e) => setProductId(e.target.value)} className="py-2.5">
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>{product.name} · {product.code}</option>
                       ))}
-                    </select>
+                    </NativeSelect>
+                  </label>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="grid gap-2 text-sm">
+                      <span className="text-foreground/65">Location</span>
+                      <NativeSelect value={locationCode} onChange={(e) => setLocationCode(e.target.value)} className="py-2.5">
+                        {locations.map((location) => (
+                          <option key={location.code} value={location.code}>{location.name}</option>
+                        ))}
+                      </NativeSelect>
+                    </label>
+
+                    <label className="grid gap-2 text-sm">
+                      <span className="text-foreground/65">Movement</span>
+                      <NativeSelect value={movementType} onChange={(e) => setMovementType(e.target.value as InventoryMovementInput["movementType"])} className="py-2.5">
+                        {Object.entries(movementLabels).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </NativeSelect>
+                    </label>
+                  </div>
+
+                  <label className="grid gap-2 text-sm">
+                    <span className="text-foreground/65">Quantity in cases</span>
+                    <input value={quantityCases} onChange={(e) => setQuantityCases(e.target.value)} type="number" min="0.001" step="0.001" className="rounded-xl border border-border bg-background px-3 py-2.5" />
                   </label>
 
                   <label className="grid gap-2 text-sm">
-                    <span className="text-foreground/65">Movement</span>
-                    <select value={movementType} onChange={(e) => setMovementType(e.target.value as InventoryMovementInput["movementType"])} className="rounded-xl border border-border bg-background px-3 py-2.5">
-                      {Object.entries(movementLabels).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
+                    <span className="text-foreground/65">Note</span>
+                    <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} className="rounded-xl border border-border bg-background px-3 py-2.5" placeholder="Optional note for the movement log" />
                   </label>
+
+                  <Button onClick={handleMovementSubmit} disabled={movementMutation.isPending || !products.length || !locations.length} className="brand-gradient text-white hover:opacity-95">
+                    {movementMutation.isPending ? "Saving movement..." : "Save movement"}
+                  </Button>
                 </div>
+              </div>
 
-                <label className="grid gap-2 text-sm">
-                  <span className="text-foreground/65">Quantity in cases</span>
-                  <input value={quantityCases} onChange={(e) => setQuantityCases(e.target.value)} type="number" min="0.001" step="0.001" className="rounded-xl border border-border bg-background px-3 py-2.5" />
-                </label>
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <h3 className="text-base font-semibold text-foreground">Set reorder level</h3>
+                <p className="mt-2 text-sm text-foreground/55">Control when a line becomes low stock for each location.</p>
 
-                <label className="grid gap-2 text-sm">
-                  <span className="text-foreground/65">Note</span>
-                  <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} className="rounded-xl border border-border bg-background px-3 py-2.5" placeholder="Optional note for the movement log" />
-                </label>
+                <div className="mt-4 grid gap-4">
+                  <div className="rounded-2xl bg-muted/40 p-4 text-sm text-foreground/70">
+                    <p>Current on hand: <span className="font-semibold text-foreground">{selectedInventoryRow?.on_hand_cases.toFixed(0) ?? "0"}</span></p>
+                    <p>Current reserved: <span className="font-semibold text-foreground">{selectedInventoryRow?.reserved_cases.toFixed(0) ?? "0"}</span></p>
+                    <p>Available now: <span className="font-semibold text-foreground">{selectedInventoryRow?.available_cases.toFixed(0) ?? "0"}</span></p>
+                  </div>
 
-                <Button onClick={handleMovementSubmit} disabled={movementMutation.isPending || !products.length || !locations.length} className="brand-gradient text-white hover:opacity-95">
-                  {movementMutation.isPending ? "Saving movement..." : "Save movement"}
-                </Button>
+                  <label className="grid gap-2 text-sm">
+                    <span className="text-foreground/65">Reorder level in cases</span>
+                    <input value={reorderLevelCases} onChange={(e) => setReorderLevelCases(e.target.value)} type="number" min="0" step="1" className="rounded-xl border border-border bg-background px-3 py-2.5" />
+                  </label>
+
+                  <Button onClick={handleReorderSubmit} disabled={reorderMutation.isPending || !products.length || !locations.length} variant="outline" className="border-primary/20 bg-primary/5 text-accent hover:bg-primary/10">
+                    {reorderMutation.isPending ? "Updating level..." : "Update reorder level"}
+                  </Button>
+                </div>
               </div>
             </div>
-
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <h3 className="text-base font-semibold text-foreground">Set reorder level</h3>
-              <p className="mt-2 text-sm text-foreground/55">Control when a line becomes low stock for each location.</p>
-
-              <div className="mt-4 grid gap-4">
-                <div className="rounded-2xl bg-muted/40 p-4 text-sm text-foreground/70">
-                  <p>Current on hand: <span className="font-semibold text-foreground">{selectedInventoryRow?.on_hand_cases.toFixed(0) ?? "0"}</span></p>
-                  <p>Current reserved: <span className="font-semibold text-foreground">{selectedInventoryRow?.reserved_cases.toFixed(0) ?? "0"}</span></p>
-                  <p>Available now: <span className="font-semibold text-foreground">{selectedInventoryRow?.available_cases.toFixed(0) ?? "0"}</span></p>
-                </div>
-
-                <label className="grid gap-2 text-sm">
-                  <span className="text-foreground/65">Reorder level in cases</span>
-                  <input value={reorderLevelCases} onChange={(e) => setReorderLevelCases(e.target.value)} type="number" min="0" step="1" className="rounded-xl border border-border bg-background px-3 py-2.5" />
-                </label>
-
-                <Button onClick={handleReorderSubmit} disabled={reorderMutation.isPending || !products.length || !locations.length} variant="outline" className="border-primary/20 bg-primary/5 text-accent hover:bg-primary/10">
-                  {reorderMutation.isPending ? "Updating level..." : "Update reorder level"}
-                </Button>
+          ) : (
+            <div className="p-6">
+              <div className="rounded-2xl border border-dashed border-border px-6 py-6 text-sm text-foreground/60">
+                Inventory write actions are disabled for this role. You can still review stock levels and recent movement history below.
               </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
@@ -294,3 +316,4 @@ const AdminInventoryManager = ({ accessToken, products, inventory, onInventoryCh
 };
 
 export default AdminInventoryManager;
+

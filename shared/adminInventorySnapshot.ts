@@ -1,4 +1,8 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import {
+  assertAdminPermission,
+  resolveAdminContext,
+  type AdminAccessConfig,
+} from "./adminAccess";
 
 export interface AdminInventorySnapshotRow {
   productId: string;
@@ -21,61 +25,28 @@ export class AdminInventorySnapshotError extends Error {
   }
 }
 
-interface SnapshotConfig {
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  adminEmails: string[];
-  authorizationHeader?: string | string[];
-}
+type SnapshotConfig = AdminAccessConfig
 
-function parseBearerToken(header?: string | string[]): string | null {
-  const value = Array.isArray(header) ? header[0] : header;
-  if (!value) return null;
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
-}
-
-function normalizeAdminEmails(adminEmails: string[]): string[] {
-  return adminEmails.map((email) => email.trim().toLowerCase()).filter(Boolean);
-}
-
-function createAdminClient(config: SnapshotConfig) {
-  return createClient(config.supabaseUrl, config.serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-}
-
-async function requireAdminUser(config: SnapshotConfig): Promise<{ admin: ReturnType<typeof createAdminClient>; user: User }> {
-  const token = parseBearerToken(config.authorizationHeader);
-  if (!token) {
-    throw new AdminInventorySnapshotError(401, "Sign in to access inventory reporting.");
+function mapAuthorizationError(error: unknown): never {
+  if (error instanceof Error && "status" in error && typeof error.status === "number") {
+    throw new AdminInventorySnapshotError(error.status, error.message);
   }
 
-  const admin = createAdminClient(config);
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) {
-    throw new AdminInventorySnapshotError(401, "Your session could not be verified.");
-  }
+  throw error;
+}
 
-  const allowedEmails = normalizeAdminEmails(config.adminEmails);
-  if (allowedEmails.length === 0) {
-    throw new AdminInventorySnapshotError(403, "Admin access is not configured yet. Add ADMIN_EMAILS on the server.");
+async function requireInventorySnapshotAccess(config: SnapshotConfig) {
+  try {
+    const context = await resolveAdminContext(config);
+    assertAdminPermission(context.access, "inventory.read", "You do not have permission to view inventory.");
+    return context;
+  } catch (error) {
+    mapAuthorizationError(error);
   }
-
-  const userEmail = data.user.email?.toLowerCase() ?? "";
-  if (!allowedEmails.includes(userEmail)) {
-    throw new AdminInventorySnapshotError(403, "Your account does not have admin access.");
-  }
-
-  return { admin, user: data.user };
 }
 
 export async function loadAdminInventorySnapshot(config: SnapshotConfig, limit = 500): Promise<AdminInventorySnapshotRow[]> {
-  const { admin } = await requireAdminUser(config);
+  const { admin } = await requireInventorySnapshotAccess(config);
 
   const { data, error } = await admin
     .from("v_inventory_snapshot")
